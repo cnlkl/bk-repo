@@ -36,6 +36,7 @@ import okio.BufferedSink
 import okio.ForwardingSink
 import okio.Sink
 import okio.buffer
+import org.slf4j.LoggerFactory
 
 internal class ProgressRequestBody(
     private val delegate: RequestBody,
@@ -51,13 +52,20 @@ internal class ProgressRequestBody(
         val countingSink = CountingSink(sink)
         val bufferedSink: BufferedSink = countingSink.buffer()
         delegate.writeTo(bufferedSink)
+        logger.info("bufferedSink $bufferedSink flush")
         bufferedSink.flush()
     }
 
     inner class CountingSink(delegate: Sink) : ForwardingSink(delegate) {
         override fun write(source: Buffer, byteCount: Long) {
+            logger.info("source $source , byteCount $byteCount")
             super.write(source, byteCount)
+            logger.info("onProgress sha256")
             listener.onProgress(task, sha256, byteCount)
         }
+    }
+
+    companion object {
+        private val logger = LoggerFactory.getLogger(ProgressRequestBody::class.java)
     }
 }
