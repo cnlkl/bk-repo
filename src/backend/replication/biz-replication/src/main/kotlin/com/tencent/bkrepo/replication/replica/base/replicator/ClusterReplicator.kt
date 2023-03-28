@@ -180,8 +180,8 @@ class ClusterReplicator(
         with(context) {
             return buildNodeCreateRequest(this, node)?.let {
                 retry(times = RETRY_COUNT, delayInSeconds = DELAY_IN_SECONDS) { retry ->
-                    if (blobReplicaClient!!.check(it.sha256!!, remoteRepo?.storageCredentials?.key).data != true
-                    ) {
+//                    if (blobReplicaClient!!.check(it.sha256!!, remoteRepo?.storageCredentials?.key).data != true
+//                    ) {
                         logger.info("The file [${node.fullPath}] with sha256 [${node.sha256}] " +
                                         "will be pushed to the remote server, try the $retry time!")
                         val artifactInputStream = localDataManager.getBlobData(it.sha256!!, it.size!!, localRepo)
@@ -204,12 +204,12 @@ class ClusterReplicator(
                                              "${Throwables.getStackTraceAsString(throwable)}!")
                             throw throwable
                         }
-                    }
+//                    }
                     logger.info(
                         "The node [${node.fullPath}] will be pushed to the remote server!"
                     )
                     // 2. 同步节点信息
-                    artifactReplicaClient!!.replicaNodeCreateRequest(it)
+//                    artifactReplicaClient!!.replicaNodeCreateRequest(it)
                     true
                 }
             } ?: false
@@ -230,15 +230,15 @@ class ClusterReplicator(
             if (remoteProjectId.isNullOrBlank() || remoteRepoName.isNullOrBlank()) return null
             val fullPath = "${node.projectId}/${node.repoName}${node.fullPath}"
             // 节点冲突检查
-            if (artifactReplicaClient!!.checkNodeExist(remoteProjectId, remoteRepoName, node.fullPath).data == true) {
-                when (task.setting.conflictStrategy) {
-                    ConflictStrategy.SKIP -> return null
-                    ConflictStrategy.FAST_FAIL -> throw IllegalArgumentException("File[$fullPath] conflict.")
-                    else -> {
-                        // do nothing
-                    }
-                }
-            }
+//            if (artifactReplicaClient!!.checkNodeExist(remoteProjectId, remoteRepoName, node.fullPath).data == true) {
+//                when (task.setting.conflictStrategy) {
+//                    ConflictStrategy.SKIP -> return null
+//                    ConflictStrategy.FAST_FAIL -> throw IllegalArgumentException("File[$fullPath] conflict.")
+//                    else -> {
+//                        // do nothing
+//                    }
+//                }
+//            }
             // 查询元数据
             val metadata = if (task.setting.includeMetadata) node.nodeMetadata else emptyList()
             return NodeCreateRequest(
