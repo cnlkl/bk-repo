@@ -92,9 +92,9 @@ class BlobReplicaController(
     ): Response<Void> {
         logger.info("The file with sha256 [$sha256] will be handled!")
         val credentials = credentialsCache.get(storageKey.orEmpty())
-        if (storageService.exist(sha256, credentials)) {
-            return ResponseBuilder.success()
-        }
+//        if (storageService.exist(sha256, credentials)) {
+//            return ResponseBuilder.success()
+//        }
         val artifactFile = ArtifactFileFactory.build(file, credentials)
         if (artifactFile.getFileSha256() != sha256) {
             throw ErrorCodeException(ArtifactMessageCode.DIGEST_CHECK_FAILED, "sha256")
