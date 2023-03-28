@@ -179,7 +179,7 @@ class ReplicaContext(
 
     companion object {
         private val logger = LoggerFactory.getLogger(ReplicaContext::class.java)
-        private const val READ_TIMEOUT = 10 * 60 * 1000L
+        private const val READ_TIMEOUT = 10 * 1000L
         private const val WRITE_TIMEOUT = 5 * 1000L
     }
 }
