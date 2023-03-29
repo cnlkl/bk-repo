@@ -35,7 +35,7 @@ class SocketInterceptor : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
         logger.info("before set so_linger ${chain.connection()?.socket()?.soLinger}")
-        chain.connection()?.socket()?.setSoLinger(true, chain.writeTimeoutMillis())
+        chain.connection()?.socket()?.setSoLinger(true, chain.writeTimeoutMillis()/1000)
         logger.info("After set so_linger ${chain.connection()?.socket()?.soLinger}")
         return chain.proceed(chain.request())
     }
