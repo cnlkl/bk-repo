@@ -32,7 +32,7 @@ object OkHttpClientPool {
                     it
                 )
             }
-            builder.addInterceptor(SocketInterceptor())
+            builder.addNetworkInterceptor(SocketInterceptor())
             builder.addNetworkInterceptor(ProgressInterceptor())
             builder.build()
         }
