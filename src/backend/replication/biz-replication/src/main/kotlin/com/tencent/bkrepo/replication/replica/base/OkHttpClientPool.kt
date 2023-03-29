@@ -2,6 +2,7 @@ package com.tencent.bkrepo.replication.replica.base
 
 import com.tencent.bkrepo.common.artifact.util.okhttp.HttpClientBuilderFactory
 import com.tencent.bkrepo.common.service.cluster.ClusterInfo
+import com.tencent.bkrepo.replication.replica.base.interceptor.SocketInterceptor
 import com.tencent.bkrepo.replication.replica.base.interceptor.progress.ProgressInterceptor
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -31,6 +32,7 @@ object OkHttpClientPool {
                     it
                 )
             }
+            builder.addInterceptor(SocketInterceptor())
             builder.addNetworkInterceptor(ProgressInterceptor())
             builder.build()
         }

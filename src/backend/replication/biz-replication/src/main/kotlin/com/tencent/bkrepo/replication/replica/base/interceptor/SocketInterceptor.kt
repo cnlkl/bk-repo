@@ -1,7 +1,7 @@
 /*
  * Tencent is pleased to support the open source community by making BK-CI 蓝鲸持续集成平台 available.
  *
- * Copyright (C) 2019 THL A29 Limited, a Tencent company.  All rights reserved.
+ * Copyright (C) 2022 THL A29 Limited, a Tencent company.  All rights reserved.
  *
  * BK-CI 蓝鲸持续集成平台 is licensed under the MIT license.
  *
@@ -25,40 +25,23 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-package com.tencent.bkrepo.replication.replica.base.interceptor.progress
+package com.tencent.bkrepo.replication.replica.base.interceptor
 
-import com.tencent.bkrepo.replication.pojo.task.ReplicaTaskInfo
-import com.tencent.bkrepo.replication.replica.base.process.ProgressListener
-import okhttp3.MediaType
-import okhttp3.RequestBody
-import okio.Buffer
-import okio.BufferedSink
-import okio.ForwardingSink
-import okio.Sink
-import okio.buffer
+import okhttp3.Interceptor
+import okhttp3.Response
 import org.slf4j.LoggerFactory
 
-internal class ProgressRequestBody(
-    private val delegate: RequestBody,
-    private val listener: ProgressListener,
-    private val task: ReplicaTaskInfo,
-    private val sha256: String
-) : RequestBody() {
+class SocketInterceptor : Interceptor {
 
-    override fun contentType(): MediaType? = delegate.contentType()
-    override fun contentLength(): Long = delegate.contentLength()
-
-    override fun writeTo(sink: BufferedSink) {
-        val countingSink = CountingSink(sink)
-        val bufferedSink: BufferedSink = countingSink.buffer()
-        delegate.writeTo(bufferedSink)
-        bufferedSink.flush()
+    override fun intercept(chain: Interceptor.Chain): Response {
+        logger.info("before set so_linger ${chain.connection()?.socket()?.soLinger}")
+        chain.connection()?.socket()?.setSoLinger(true, 0)
+        logger.info("After set so_linger ${chain.connection()?.socket()?.soLinger}")
+        return chain.proceed(chain.request())
     }
 
-    inner class CountingSink(delegate: Sink) : ForwardingSink(delegate) {
-        override fun write(source: Buffer, byteCount: Long) {
-            super.write(source, byteCount)
-            listener.onProgress(task, sha256, byteCount)
-        }
+
+    companion object {
+        private val logger = LoggerFactory.getLogger(SocketInterceptor::class.java)
     }
 }
