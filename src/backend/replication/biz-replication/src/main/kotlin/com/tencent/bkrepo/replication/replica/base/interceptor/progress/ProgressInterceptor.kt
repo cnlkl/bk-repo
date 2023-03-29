@@ -34,6 +34,7 @@ import com.tencent.bkrepo.replication.replica.base.process.ProgressListener
 import okhttp3.Interceptor
 import okhttp3.Request
 import okhttp3.Response
+import org.slf4j.LoggerFactory
 import java.io.IOException
 
 class ProgressInterceptor : Interceptor {
@@ -41,6 +42,8 @@ class ProgressInterceptor : Interceptor {
     private val listener by lazy { SpringContextUtils.getBean<ProgressListener>() }
 
     override fun intercept(chain: Interceptor.Chain): Response {
+        logger.info("ProgressInterceptor connection ${chain.connection()}")
+        logger.info("ProgressInterceptor so_linger ${chain.connection()?.socket()?.soLinger}")
         val request = chain.request()
         val tag = request.tag(RequestTag::class.java)
         if (tag != null) {
@@ -68,5 +71,9 @@ class ProgressInterceptor : Interceptor {
         return request.newBuilder()
             .method(request.method, ProgressRequestBody(request.body!!, listener, task, key))
             .build()
+    }
+
+    companion object {
+        private val logger = LoggerFactory.getLogger(ProgressInterceptor::class.java)
     }
 }
