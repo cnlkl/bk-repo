@@ -4,11 +4,13 @@ import com.tencent.bkrepo.common.artifact.util.okhttp.HttpClientBuilderFactory
 import com.tencent.bkrepo.common.service.cluster.ClusterInfo
 import com.tencent.bkrepo.replication.replica.base.interceptor.SocketInterceptor
 import com.tencent.bkrepo.replication.replica.base.interceptor.progress.ProgressInterceptor
+import okhttp3.ConnectionPool
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import java.time.Duration
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 
 /**
  * OkHttpClient池，提供OkHttpClient复用
@@ -34,6 +36,7 @@ object OkHttpClientPool {
             }
             builder.addNetworkInterceptor(ProgressInterceptor())
             builder.addNetworkInterceptor(SocketInterceptor())
+            builder.connectionPool(ConnectionPool(5, 1, TimeUnit.MINUTES))
             builder.build()
         }
     }
