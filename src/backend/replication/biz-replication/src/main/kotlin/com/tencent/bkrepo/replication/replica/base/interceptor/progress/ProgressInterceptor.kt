@@ -42,7 +42,7 @@ class ProgressInterceptor : Interceptor {
     private val listener by lazy { SpringContextUtils.getBean<ProgressListener>() }
 
     override fun intercept(chain: Interceptor.Chain): Response {
-        logger.info("ProgressInterceptor connection ${chain.connection()}")
+        logger.info("ProgressInterceptor connection ${chain.connection()?.socket()}")
         logger.info("ProgressInterceptor so_linger ${chain.connection()?.socket()?.soLinger}")
         val request = chain.request()
         val tag = request.tag(RequestTag::class.java)
@@ -70,6 +70,7 @@ class ProgressInterceptor : Interceptor {
     private fun wrapRequest(request: Request, task: ReplicaTaskInfo, key: String): Request {
         return request.newBuilder()
             .method(request.method, ProgressRequestBody(request.body!!, listener, task, key))
+            .header("Connection", "close")
             .build()
     }
 
