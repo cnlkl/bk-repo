@@ -37,6 +37,7 @@ class SocketInterceptor : Interceptor {
         logger.info("SocketInterceptor connection ${chain.connection()}")
         logger.info("SocketInterceptor before set so_linger ${chain.connection()?.socket()?.soLinger}")
         chain.connection()?.socket()?.setSoLinger(true, 0)
+        chain.connection()?.socket()?.keepAlive = false
         logger.info("SocketInterceptor After set so_linger ${chain.connection()?.socket()?.soLinger}")
         return chain.proceed(chain.request())
     }
