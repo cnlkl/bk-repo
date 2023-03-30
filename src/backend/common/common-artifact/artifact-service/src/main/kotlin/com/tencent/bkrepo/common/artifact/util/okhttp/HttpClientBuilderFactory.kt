@@ -85,7 +85,7 @@ object HttpClientBuilderFactory {
                         ThreadPoolExecutor(
                             0,
                             Int.MAX_VALUE,
-                            60L,
+                            30L,
                             TimeUnit.SECONDS,
                             SynchronousQueue(),
                             threadFactory("OkHttp Dispatcher", false)
