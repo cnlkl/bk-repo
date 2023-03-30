@@ -35,10 +35,7 @@ class SocketInterceptor : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
         logger.info("SocketInterceptor connection ${chain.connection()}")
-        logger.info("SocketInterceptor before set so_linger ${chain.connection()?.socket()?.soLinger}")
-        chain.connection()?.socket()?.setSoLinger(true, 0)
-        chain.connection()?.socket()?.keepAlive = false
-        logger.info("SocketInterceptor After set so_linger ${chain.connection()?.socket()?.soLinger}")
+        logger.info("SocketInterceptor before set so_linger ${chain.connection()?.socket()?.keepAlive}")
         return chain.proceed(chain.request())
     }
 
