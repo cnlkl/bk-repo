@@ -57,6 +57,7 @@ import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.slf4j.LoggerFactory
+import java.io.IOException
 import java.io.InputStream
 import java.time.Duration
 
@@ -161,7 +162,7 @@ class ReplicaContext(
             .tag(RequestTag::class.java, tag)
             .build()
         httpClient.newCall(httpRequest).execute().use {
-            check(it.isSuccessful) { "Failed to replica file: ${it.body?.string()}" }
+            if (!it.isSuccessful) throw IOException("unexpected code $it")
         }
     }
 
