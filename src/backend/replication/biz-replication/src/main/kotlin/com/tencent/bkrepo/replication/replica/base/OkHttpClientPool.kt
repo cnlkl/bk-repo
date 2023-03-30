@@ -8,7 +8,6 @@ import okhttp3.ConnectionPool
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
-import okhttp3.logging.HttpLoggingInterceptor
 import java.time.Duration
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
@@ -35,9 +34,9 @@ object OkHttpClientPool {
                     it
                 )
             }
-            val logInterceptor = HttpLoggingInterceptor()
-            logInterceptor.level = HttpLoggingInterceptor.Level.HEADERS
-            builder.addInterceptor(logInterceptor)
+//            val logInterceptor = HttpLoggingInterceptor()
+//            logInterceptor.level = HttpLoggingInterceptor.Level.HEADERS
+//            builder.addInterceptor(logInterceptor)
             builder.addNetworkInterceptor(ProgressInterceptor())
             builder.addNetworkInterceptor(SocketInterceptor())
             builder.connectionPool(ConnectionPool(5, 1, TimeUnit.MINUTES))

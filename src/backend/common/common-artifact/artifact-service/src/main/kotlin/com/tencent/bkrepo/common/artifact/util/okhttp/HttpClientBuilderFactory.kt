@@ -91,7 +91,10 @@ object HttpClientBuilderFactory {
                             threadFactory("OkHttp Dispatcher", false)
                         )
                     )
-                    dispatcher(Dispatcher(traceableExecutorService))
+                    val dispatcher = Dispatcher(traceableExecutorService)
+                    dispatcher.maxRequestsPerHost = 10
+                    dispatcher.maxRequests = 100
+                    dispatcher(dispatcher)
                 }
             }
     }
