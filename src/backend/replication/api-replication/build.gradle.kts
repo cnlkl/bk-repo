@@ -31,5 +31,6 @@ dependencies {
     compileOnly("org.springframework.cloud:spring-cloud-openfeign-core")
     compileOnly("io.github.openfeign:feign-core")
     implementation("com.squareup.okhttp3:okhttp")
+    implementation("com.squareup.okhttp3:logging-interceptor:4.9.0")
     api(project(":auth:api-auth"))
 }

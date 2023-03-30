@@ -34,6 +34,7 @@ object OkHttpClientPool {
                     it
                 )
             }
+            builder.addInterceptor(LogInterceptor())
             builder.addNetworkInterceptor(ProgressInterceptor())
             builder.addNetworkInterceptor(SocketInterceptor())
             builder.connectionPool(ConnectionPool(5, 1, TimeUnit.MINUTES))
