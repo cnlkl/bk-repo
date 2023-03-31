@@ -109,15 +109,15 @@ class SocketInterceptor : Interceptor {
         }
 
         override fun write(source: Buffer, byteCount: Long) {
-            logger.info("push blob[$sha256], writing $byteCount byte to sink, task[$taskInfo]")
+            val startTime = System.nanoTime()
             try {
                 proxiedSink.write(source, byteCount)
             } catch (e: Exception) {
-                logger.info("push blob[$sha256], write $byteCount byte to sink failed, task[$taskInfo]")
+                logger.info("push blob[$sha256], write $byteCount byte to sink failed," +
+                                " elapsed[${System.nanoTime() - startTime}], task[$taskInfo.id]")
                 e.printStackTrace()
                 throw e
             }
-            logger.info("push blob[$sha256], write $byteCount byte to sink success, task[$taskInfo]")
         }
 
     }
