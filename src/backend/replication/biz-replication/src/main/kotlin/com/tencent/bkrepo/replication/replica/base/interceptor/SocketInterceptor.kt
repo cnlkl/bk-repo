@@ -50,7 +50,9 @@ class SocketInterceptor : Interceptor {
         }
 
         logger.info("SocketInterceptor connection ${chain.connection()}")
-        logger.info("SocketInterceptor before set so_linger ${chain.connection()?.socket()?.keepAlive}")
+        logger.info("SocketInterceptor before set so_linger ${chain.connection()?.socket()?.soLinger}")
+        chain.connection()?.socket()?.setSoLinger(true, 3600)
+        logger.info("SocketInterceptor after set so_linger ${chain.connection()?.socket()?.soLinger}")
         return chain.proceed(chain.request())
     }
 
@@ -129,8 +131,10 @@ class SocketInterceptor : Interceptor {
     ) : Socket() {
         // SocketAsyncTimeout中只会调用close方法，仅进行测试，所以只需要代理close方法就行
         override fun close() {
-            logger.info("closing socket of push file[$sha256], task[$taskInfo]")
+            logger.info("closing socket of push file[$sha256], soLinger[${proxiedSocket.soLinger}] task[$taskInfo]")
             try {
+                proxiedSocket.setSoLinger(true, 0)
+                logger.info("closing socket updated soLinger[${proxiedSocket.soLinger}]")
                 proxiedSocket.close()
             } catch (e: Exception) {
                 logger.info("close socket of push file[$sha256] failed, task[$taskInfo]")
