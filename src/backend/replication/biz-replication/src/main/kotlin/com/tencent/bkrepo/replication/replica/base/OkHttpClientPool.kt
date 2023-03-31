@@ -50,6 +50,10 @@ object OkHttpClientPool {
 }
 
 private class SocketFactorProxy(private val proxiedFactory: SocketFactory) : SocketFactory() {
+    override fun createSocket(): Socket {
+        return init(proxiedFactory.createSocket())
+    }
+
     override fun createSocket(host: String?, port: Int): Socket {
         return init(proxiedFactory.createSocket(host, port))
     }
