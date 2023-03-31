@@ -8,9 +8,12 @@ import okhttp3.ConnectionPool
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
+import java.net.InetAddress
+import java.net.Socket
 import java.time.Duration
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import javax.net.SocketFactory
 
 /**
  * OkHttpClient池，提供OkHttpClient复用
@@ -29,6 +32,7 @@ object OkHttpClientPool {
                 .readTimeout(readTimeout)
                 .retryOnConnectionFailure(false)
                 .writeTimeout(writeTimeout)
+                .socketFactory(SocketFactorProxy(SocketFactory.getDefault()))
             interceptors.forEach {
                 builder.addInterceptor(
                     it
@@ -42,5 +46,28 @@ object OkHttpClientPool {
             builder.connectionPool(ConnectionPool(5, 1, TimeUnit.MINUTES))
             builder.build()
         }
+    }
+}
+
+private class SocketFactorProxy(private val proxiedFactory: SocketFactory) : SocketFactory() {
+    override fun createSocket(host: String?, port: Int): Socket {
+        return init(proxiedFactory.createSocket(host, port))
+    }
+
+    override fun createSocket(host: String?, port: Int, localHost: InetAddress?, localPort: Int): Socket {
+        return init(proxiedFactory.createSocket(host, port, localHost, localPort))
+    }
+
+    override fun createSocket(host: InetAddress?, port: Int): Socket {
+        return init(proxiedFactory.createSocket(host, port))
+    }
+
+    override fun createSocket(address: InetAddress?, port: Int, localAddress: InetAddress?, localPort: Int): Socket {
+        return init(proxiedFactory.createSocket(address, port, localAddress, localPort))
+    }
+
+    private fun init(socket: Socket): Socket {
+        socket.setSoLinger(true, 0)
+        return socket
     }
 }

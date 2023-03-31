@@ -48,11 +48,6 @@ class SocketInterceptor : Interceptor {
             // 为push blob接口调用添加socket关闭过程日志
             proxySocket(chain.connection() as RealConnection, chain.request())
         }
-
-        logger.info("SocketInterceptor connection ${chain.connection()}")
-        logger.info("SocketInterceptor before set so_linger ${chain.connection()?.socket()?.soLinger}")
-        chain.connection()?.socket()?.setSoLinger(true, 3600)
-        logger.info("SocketInterceptor after set so_linger ${chain.connection()?.socket()?.soLinger}")
         return chain.proceed(chain.request())
     }
 
@@ -133,29 +128,8 @@ class SocketInterceptor : Interceptor {
     ) : Socket() {
         // SocketAsyncTimeout中只会调用close方法，仅进行测试，所以只需要代理close方法就行
         override fun close() {
-            proxiedSocket.setSoLinger(true, 0)
-            try {
-                logger.info("closing socket outputstream of push file[$sha256], soLinger[${proxiedSocket.soLinger}] task[$taskInfo]")
-                proxiedSocket.getOutputStream().close()
-                logger.info("closing socket outputstream of push file[$sha256] success, soLinger[${proxiedSocket.soLinger}] task[$taskInfo]")
-            } catch (e: Exception) {
-                logger.info("closing socket outputstream of push file[$sha256] failed, soLinger[${proxiedSocket.soLinger}] task[$taskInfo]")
-                e.printStackTrace()
-            }
-
-            try {
-                logger.info("shut down socket output of push file[$sha256], soLinger[${proxiedSocket.soLinger}] task[$taskInfo]")
-                proxiedSocket.shutdownOutput()
-                logger.info("shut down socket output of push file[$sha256] success, soLinger[${proxiedSocket.soLinger}] task[$taskInfo]")
-                return
-            } catch (e: Exception) {
-                e.printStackTrace()
-                logger.info("shut down socket output of push file[$sha256] failed, soLinger[${proxiedSocket.soLinger}] task[$taskInfo]")
-            }
-
             try {
                 logger.info("closing socket of push file[$sha256], soLinger[${proxiedSocket.soLinger}] task[$taskInfo]")
-                logger.info("closing socket updated soLinger[${proxiedSocket.soLinger}]")
                 proxiedSocket.close()
             } catch (e: Exception) {
                 logger.info("close socket of push file[$sha256] failed, task[$taskInfo]")
