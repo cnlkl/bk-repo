@@ -39,6 +39,7 @@ import okio.Timeout
 import org.slf4j.LoggerFactory
 import java.lang.reflect.Field
 import java.net.Socket
+import javax.net.ssl.SSLSocket
 
 class SocketInterceptor : Interceptor {
 
@@ -130,6 +131,18 @@ class SocketInterceptor : Interceptor {
         override fun close() {
             try {
                 logger.info("closing socket of push file[$sha256], soLinger[${proxiedSocket.soLinger}] task[$taskInfo]")
+                if (proxiedSocket is SSLSocket) {
+                    val implField = Socket::class.java.getDeclaredField("impl")
+                    implField.isAccessible = true
+                    val impl = implField.get(proxiedSocket)
+                    val fdUseCount = impl.javaClass.superclass.superclass.getDeclaredField("fdUseCount")
+                    if (fdUseCount.get(impl) as Int > 0) {
+                        val selfField = proxiedSocket::class.java.superclass.getDeclaredField("self")
+                        selfField.isAccessible = true
+                        val self = selfField.get(proxiedSocket) as Socket
+                        self.close()
+                    }
+                }
                 proxiedSocket.close()
             } catch (e: Exception) {
                 logger.info("close socket of push file[$sha256] failed, task[$taskInfo]")
