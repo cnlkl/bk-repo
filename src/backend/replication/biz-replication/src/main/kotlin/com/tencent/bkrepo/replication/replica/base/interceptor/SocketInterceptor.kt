@@ -132,15 +132,16 @@ class SocketInterceptor : Interceptor {
             try {
                 logger.info("closing socket of push file[$sha256], soLinger[${proxiedSocket.soLinger}] task[$taskInfo]")
                 if (proxiedSocket is SSLSocket) {
+                    val selfField = proxiedSocket::class.java.superclass.getDeclaredField("self")
+                    selfField.isAccessible = true
+                    val self = selfField.get(proxiedSocket) as Socket
+
                     val implField = Socket::class.java.getDeclaredField("impl")
                     implField.isAccessible = true
-                    val impl = implField.get(proxiedSocket)
+                    val impl = implField.get(self)
                     val fdUseCount = impl.javaClass.superclass.superclass.getDeclaredField("fdUseCount")
                     fdUseCount.isAccessible = true
                     if (fdUseCount.get(impl) as Int > 0) {
-                        val selfField = proxiedSocket::class.java.superclass.getDeclaredField("self")
-                        selfField.isAccessible = true
-                        val self = selfField.get(proxiedSocket) as Socket
                         self.close()
                     }
                 }
