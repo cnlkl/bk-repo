@@ -136,6 +136,7 @@ class SocketInterceptor : Interceptor {
                     implField.isAccessible = true
                     val impl = implField.get(proxiedSocket)
                     val fdUseCount = impl.javaClass.superclass.superclass.getDeclaredField("fdUseCount")
+                    fdUseCount.isAccessible = true
                     if (fdUseCount.get(impl) as Int > 0) {
                         val selfField = proxiedSocket::class.java.superclass.getDeclaredField("self")
                         selfField.isAccessible = true
