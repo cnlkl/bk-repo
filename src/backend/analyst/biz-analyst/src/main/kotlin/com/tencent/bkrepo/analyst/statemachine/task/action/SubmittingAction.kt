@@ -30,16 +30,16 @@ package com.tencent.bkrepo.analyst.statemachine.task.action
 import com.tencent.bkrepo.analyst.component.CacheableRepositoryClient
 import com.tencent.bkrepo.analyst.configuration.ScannerProperties
 import com.tencent.bkrepo.analyst.dao.FileScanResultDao
-import com.tencent.bkrepo.analyst.dao.ProjectScanConfigurationDao
 import com.tencent.bkrepo.analyst.dao.ScanTaskDao
 import com.tencent.bkrepo.analyst.dao.SubScanTaskDao
 import com.tencent.bkrepo.analyst.exception.TaskSubmitInterruptedException
 import com.tencent.bkrepo.analyst.metrics.ScannerMetrics
-import com.tencent.bkrepo.analyst.model.TProjectScanConfiguration
+import com.tencent.bkrepo.analyst.pojo.ProjectScanConfiguration
 import com.tencent.bkrepo.analyst.pojo.ScanTask
 import com.tencent.bkrepo.analyst.pojo.ScanTaskStatus
 import com.tencent.bkrepo.analyst.pojo.ScanTaskStatus.PENDING
 import com.tencent.bkrepo.analyst.pojo.ScanTaskStatus.SCANNING_SUBMITTING
+import com.tencent.bkrepo.analyst.service.ProjectScanConfigurationService
 import com.tencent.bkrepo.analyst.service.ScannerService
 import com.tencent.bkrepo.analyst.statemachine.Action
 import com.tencent.bkrepo.analyst.statemachine.TaskStateMachineConfiguration.Companion.STATE_MACHINE_ID_SCAN_TASK
@@ -48,6 +48,7 @@ import com.tencent.bkrepo.analyst.statemachine.iterator.IteratorManager
 import com.tencent.bkrepo.analyst.statemachine.subtask.SubtaskEvent
 import com.tencent.bkrepo.analyst.statemachine.subtask.context.CreateSubtaskContext
 import com.tencent.bkrepo.analyst.statemachine.task.ScanTaskEvent
+import com.tencent.bkrepo.analyst.statemachine.task.context.StopTaskContext
 import com.tencent.bkrepo.analyst.statemachine.task.context.SubmitTaskContext
 import com.tencent.bkrepo.common.analysis.pojo.scanner.SubScanTaskStatus.NEVER_SCANNED
 import com.tencent.bkrepo.common.lock.service.LockOperation
@@ -72,7 +73,7 @@ class SubmittingAction(
     private val scannerService: ScannerService,
     private val subScanTaskDao: SubScanTaskDao,
     private val fileScanResultDao: FileScanResultDao,
-    private val projectScanConfigurationDao: ProjectScanConfigurationDao,
+    private val projectScanConfigurationService: ProjectScanConfigurationService,
     private val scannerProperties: ScannerProperties
 ) : TaskAction {
 
@@ -121,8 +122,11 @@ class SubmittingAction(
             logger.info("task[${e.taskId}] has been stopped")
             return TransitResult(ScanTaskStatus.STOPPING.name)
         } catch (e: Exception) {
-            logger.error("submit task failed, taskId[${scanTask.taskId}]", e)
-            throw e
+            logger.error("submit task[${scanTask.taskId}] failed, try to stop task", e)
+            return taskStateMachine.sendEvent(
+                SCANNING_SUBMITTING.name,
+                Event(ScanTaskEvent.STOP.name, StopTaskContext(scanTaskDao.findById(scanTask.taskId)!!))
+            )
         }
         logger.info("submit $submittedSubTaskCount sub tasks, $reuseResultTaskCount sub tasks reuse result")
 
@@ -141,7 +145,9 @@ class SubmittingAction(
     private fun submit(scanTask: ScanTask): Pair<Long, Long> {
         val scanner = scannerService.get(scanTask.scanner)
         val projectId = scanTask.scanPlan?.projectId
-        var projectScanConfiguration = projectId?.let { projectScanConfigurationDao.findByProjectId(it) }
+        var projectScanConfiguration = projectId?.let {
+            projectScanConfigurationService.findProjectOrGlobalScanConfiguration(it)
+        }
         logger.info("submitting sub tasks of task[${scanTask.taskId}], scanner: [${scanner.name}]")
 
         var scanningCount = projectId?.let { subScanTaskDao.scanningCount(it) }
@@ -151,7 +157,7 @@ class SubmittingAction(
         for (node in nodeIterator) {
             // 未使用扫描方案的情况直接取node的projectId
             projectScanConfiguration = projectScanConfiguration
-                ?: projectScanConfigurationDao.findByProjectId(node.projectId)
+                ?: projectScanConfigurationService.findProjectOrGlobalScanConfiguration(node.projectId)
             scanningCount = scanningCount ?: subScanTaskDao.scanningCount(node.projectId)
 
             val context = CreateSubtaskContext(node, scanner, scanTask)
@@ -172,7 +178,7 @@ class SubmittingAction(
                 reuseResultTaskCount++
             } else {
                 // 变更子任务状态为CREATED或BLOCKED
-                val event = event(scanningCount, projectScanConfiguration)
+                val event = event(scanTask, scanningCount, projectScanConfiguration)
                 subtaskStateMachine.sendEvent(NEVER_SCANNED.name, Event(event.name, context))
                 // 统计子任务数量
                 submittedSubTaskCount++
@@ -202,9 +208,14 @@ class SubmittingAction(
      *
      */
     private fun event(
+        scanTask: ScanTask,
         scanningCount: Long,
-        projectConfiguration: TProjectScanConfiguration?
+        projectConfiguration: ProjectScanConfiguration?
     ): SubtaskEvent {
+        if (scanTask.isGlobal()) {
+            // 全局任务不阻塞
+            return SubtaskEvent.CREATE
+        }
         val limitSubScanTaskCount = projectConfiguration?.subScanTaskCountLimit
             ?: scannerProperties.defaultProjectSubScanTaskCountLimit
         if (scanningCount >= limitSubScanTaskCount.toLong()) {

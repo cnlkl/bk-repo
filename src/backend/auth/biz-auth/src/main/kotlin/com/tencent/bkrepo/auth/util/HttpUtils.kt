@@ -52,14 +52,13 @@ object HttpUtils {
                 return ApiResponse(responseCode, responseContent)
             }
             throw RuntimeException(
-                "http request url ${request.url} failed, " +
-                    "code: $responseCode, responseContent: $responseContent"
+                "http request url ${request.url} failed, code: $responseCode, responseContent: $responseContent"
             )
         } catch (e: Exception) {
             if (retry > 0) {
                 logger.warn("http request error, cause: ${e.message}")
             } else {
-                logger.error("http request error", e)
+                logger.error("http request error ", e)
             }
         }
         if (retry > 0) {

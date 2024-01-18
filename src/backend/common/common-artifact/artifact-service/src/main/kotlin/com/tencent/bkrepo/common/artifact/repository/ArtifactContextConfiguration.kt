@@ -34,6 +34,11 @@ package com.tencent.bkrepo.common.artifact.repository
 import com.tencent.bkrepo.common.artifact.config.ArtifactBeanRegistrar
 import com.tencent.bkrepo.common.artifact.repository.composite.CompositeRepository
 import com.tencent.bkrepo.common.artifact.repository.context.ArtifactContextHolder
+import com.tencent.bkrepo.common.artifact.repository.proxy.ProxyRepository
+import com.tencent.bkrepo.common.artifact.repository.redirect.CosRedirectService
+import com.tencent.bkrepo.common.artifact.repository.redirect.DownloadRedirectManager
+import com.tencent.bkrepo.common.artifact.repository.redirect.EdgeNodeRedirectService
+import com.tencent.bkrepo.common.artifact.repository.redirect.LinkNodeRedirectService
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Import
 
@@ -41,6 +46,11 @@ import org.springframework.context.annotation.Import
 @Import(
     ArtifactBeanRegistrar::class,
     ArtifactContextHolder::class,
-    CompositeRepository::class
+    CompositeRepository::class,
+    ProxyRepository::class,
+    EdgeNodeRedirectService::class,
+    CosRedirectService::class,
+    LinkNodeRedirectService::class,
+    DownloadRedirectManager::class,
 )
 class ArtifactContextConfiguration

@@ -40,14 +40,17 @@ import com.tencent.bkrepo.repository.dao.NodeDao
 import com.tencent.bkrepo.repository.model.TNode
 import com.tencent.bkrepo.repository.pojo.node.ConflictStrategy
 import com.tencent.bkrepo.repository.pojo.node.NodeDeletedPoint
+import com.tencent.bkrepo.repository.pojo.node.NodeDetail
 import com.tencent.bkrepo.repository.pojo.node.NodeListOption
 import com.tencent.bkrepo.repository.pojo.node.NodeRestoreOption
 import com.tencent.bkrepo.repository.pojo.node.NodeRestoreResult
 import com.tencent.bkrepo.repository.service.node.NodeRestoreOperation
+import com.tencent.bkrepo.repository.service.node.impl.NodeBaseService.Companion.convertToDetail
 import com.tencent.bkrepo.repository.util.MetadataUtils
 import com.tencent.bkrepo.repository.util.NodeQueryHelper
 import com.tencent.bkrepo.repository.util.NodeQueryHelper.nodeDeletedFolderQuery
 import com.tencent.bkrepo.repository.util.NodeQueryHelper.nodeDeletedPointListQuery
+import com.tencent.bkrepo.repository.util.NodeQueryHelper.nodeDeletedPointListQueryBySha256
 import com.tencent.bkrepo.repository.util.NodeQueryHelper.nodeDeletedPointQuery
 import com.tencent.bkrepo.repository.util.NodeQueryHelper.nodeListQuery
 import com.tencent.bkrepo.repository.util.NodeQueryHelper.nodeQuery
@@ -65,7 +68,20 @@ open class NodeRestoreSupport(
     nodeBaseService: NodeBaseService
 ) : NodeRestoreOperation {
 
-    private val nodeDao: NodeDao = nodeBaseService.nodeDao
+    val nodeDao: NodeDao = nodeBaseService.nodeDao
+
+    override fun getDeletedNodeDetail(artifact: ArtifactInfo): List<NodeDetail> {
+        with(artifact) {
+            val query = nodeDeletedPointListQuery(projectId, repoName, getArtifactFullPath())
+            return nodeDao.find(query).map { convertToDetail(it)!! }
+        }
+    }
+
+    override fun getDeletedNodeDetailBySha256(projectId: String, repoName: String, sha256: String): NodeDetail? {
+        val query = nodeDeletedPointListQueryBySha256(projectId, repoName, sha256)
+        val node = nodeDao.findOne(query)
+        return convertToDetail(node)
+    }
 
     override fun restoreNode(artifact: ArtifactInfo, nodeRestoreOption: NodeRestoreOption): NodeRestoreResult {
         with(resolveContext(artifact, nodeRestoreOption)) {
@@ -130,7 +146,7 @@ open class NodeRestoreSupport(
     /**
      * 处理冲突并恢复节点，根据不同的冲突策略采取不同的方式
      */
-    private fun resolveConflict(context: RestoreContext, node: TNode) {
+    open fun resolveConflict(context: RestoreContext, node: TNode) {
         with(context) {
             val fullPath = node.fullPath
             if (node.deleted == null || nodeDao.exists(projectId, repoName, fullPath)) {

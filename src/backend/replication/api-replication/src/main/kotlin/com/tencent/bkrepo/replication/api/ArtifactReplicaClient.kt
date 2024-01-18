@@ -30,10 +30,12 @@ package com.tencent.bkrepo.replication.api
 import com.tencent.bkrepo.common.api.constant.HttpHeaders
 import com.tencent.bkrepo.common.api.constant.REPLICATION_SERVICE_NAME
 import com.tencent.bkrepo.common.api.pojo.Response
+import com.tencent.bkrepo.replication.pojo.request.CheckPermissionRequest
 import com.tencent.bkrepo.replication.pojo.request.NodeExistCheckRequest
 import com.tencent.bkrepo.replication.pojo.request.PackageVersionExistCheckRequest
 import com.tencent.bkrepo.repository.pojo.metadata.MetadataDeleteRequest
 import com.tencent.bkrepo.repository.pojo.metadata.MetadataSaveRequest
+import com.tencent.bkrepo.repository.pojo.node.NodeDeleteResult
 import com.tencent.bkrepo.repository.pojo.node.NodeDetail
 import com.tencent.bkrepo.repository.pojo.node.service.NodeCreateRequest
 import com.tencent.bkrepo.repository.pojo.node.service.NodeDeleteRequest
@@ -105,7 +107,7 @@ interface ArtifactReplicaClient {
     @PostMapping("/node/delete")
     fun replicaNodeDeleteRequest(
         @RequestBody request: NodeDeleteRequest
-    ): Response<Void>
+    ): Response<NodeDeleteResult>
 
     @PostMapping("/repo/create")
     fun replicaRepoCreateRequest(
@@ -121,6 +123,9 @@ interface ArtifactReplicaClient {
     fun replicaRepoDeleteRequest(
         @RequestBody request: RepoDeleteRequest
     ): Response<Void>
+
+    @PostMapping("/permission/check")
+    fun checkRepoPermission(@RequestBody request: CheckPermissionRequest): Response<Boolean>
 
     @PostMapping("/project/create")
     fun replicaProjectCreateRequest(

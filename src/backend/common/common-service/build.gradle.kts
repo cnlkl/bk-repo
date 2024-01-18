@@ -29,6 +29,8 @@
  * SOFTWARE.
  */
 
+import com.tencent.devops.utils.findPropertyOrNull
+
 val otelExporterEnabled: String? by project
 dependencies {
     api(project(":common:common-api"))
@@ -48,10 +50,18 @@ dependencies {
     }
     api("org.springframework.cloud:spring-cloud-sleuth-otel-autoconfigure")
     implementation("io.opentelemetry:opentelemetry-sdk-extension-resources")
-    // 默认添加otel exporter
-    if (otelExporterEnabled == null || otelExporterEnabled.toBoolean()) {
+    // 默认不添加otel exporter
+    if (otelExporterEnabled.toBoolean()) {
         implementation("io.opentelemetry:opentelemetry-exporter-otlp")
     }
 
+    api("cn.hutool:hutool-crypto:${Versions.HutoolCrypto}")
     compileOnly(project(":common:common-mongo"))
+
+    val assemblyMode = project.findPropertyOrNull("devops.assemblyMode")
+    if (assemblyMode == null || assemblyMode.toUpperCase() == "CONSUL") {
+        api("org.springframework.cloud:spring-cloud-starter-config")
+    }
+    api("org.springframework.retry:spring-retry")
+    api("com.github.ulisesbocchio:jasypt-spring-boot-starter:${Versions.Jasypt}")
 }

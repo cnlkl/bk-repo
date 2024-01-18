@@ -16,7 +16,7 @@
                             <bk-radio :disabled="Boolean(uploadProgress)" class="ml20" :value="false">{{ $t('notAllow') }}</bk-radio>
                         </bk-radio-group>
                     </bk-form-item>
-                    <!-- <bk-form-item :label="$t('expiress')" :required="true" :property="'expires'">
+                    <!-- <bk-form-item :label="$t('express')" :required="true" :property="'expires'">
                         <bk-input :disabled="Boolean(uploadProgress)" :placeholder="$t('uploadExpiresPlaceholder')" v-model="file.expires"></bk-input>
                     </bk-form-item> -->
                 </bk-form>
@@ -64,19 +64,19 @@
                     name: [
                         {
                             required: true,
-                            message: this.$t('pleaseInput') + this.$t('fileName'),
+                            message: this.$t('pleaseInput') + this.$t('space') + this.$t('fileName'),
                             trigger: 'blur'
                         }
                     ],
                     expires: [
                         {
                             required: true,
-                            message: this.$t('pleaseInput') + this.$t('expiress'),
+                            message: this.$t('pleaseInput') + this.$t('space') + this.$t('expire'),
                             trigger: 'blur'
                         },
                         {
                             regex: /^[0-9]+$/,
-                            message: this.$t('pleaseInput') + this.$t('legit') + this.$t('expiress'),
+                            message: this.$t('pleaseInput') + this.$t('space') + this.$t('legit') + this.$t('space') + this.$t('expire'),
                             trigger: 'blur'
                         }
                     ]
@@ -88,7 +88,7 @@
             async getFiles () {
                 if (!this.file.blob) {
                     this.$bkMessage({
-                        message: '请选择文件',
+                        message: this.$t('selectFileTip'),
                         theme: 'error'
                     })
                     return

@@ -29,6 +29,8 @@ package com.tencent.bkrepo.common.notify.client.weworkbot
 
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.tencent.bkrepo.common.api.constant.MediaTypes
+import com.tencent.bkrepo.common.api.exception.ErrorCodeException
+import com.tencent.bkrepo.common.api.message.CommonMessageCode
 import com.tencent.bkrepo.common.api.util.readJsonString
 import com.tencent.bkrepo.common.api.util.toJsonString
 import com.tencent.bkrepo.common.notify.api.NotifyChannelCredential
@@ -41,7 +43,8 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import org.slf4j.LoggerFactory
 
 class WeworkBotClient(
@@ -51,16 +54,17 @@ class WeworkBotClient(
 
     override fun send(credential: NotifyChannelCredential, message: NotifyMessage) {
         require(credential is WeworkBotChannelCredential && message is WeworkBotMessage)
+        if (message.chatIds.isNullOrEmpty()) {
+            throw ErrorCodeException(CommonMessageCode.PARAMETER_INVALID, "chatIds is empty")
+        }
 
         // 构造body
         val bodyMap = HashMap<String, Any>().apply {
-            if (!message.chatIds.isNullOrEmpty()) {
-                put("chatid", message.chatIds!!.joinToString("|"))
-            }
+            put("chatid", message.chatIds!!.joinToString("|"))
             put("msgtype", message.body.type())
             put(message.body.type(), message.body)
         }
-        val body = RequestBody.create(MediaTypes.APPLICATION_JSON.toMediaTypeOrNull(), bodyMap.toJsonString())
+        val body = bodyMap.toJsonString().toRequestBody(MediaTypes.APPLICATION_JSON.toMediaTypeOrNull())
 
         // 构造url
         val host = notifyProperties.weworkApiHost.ifEmpty { DEFAULT_API_HOST }
@@ -72,12 +76,21 @@ class WeworkBotClient(
         // 发送请求
         val request = Request.Builder().url(url).post(body).build()
         okHttpClient.newCall(request).execute().use {
-            val bodyContent = it.body?.string()
-            if (!it.isSuccessful || bodyContent?.readJsonString<WeworkBotResponse>()?.errCode != 0) {
-                logger.error(
-                    "send wework bot message failed, " +
-                        "notifyChannelName[${credential.name}], res[$bodyContent]"
-                )
+            logErr(credential.name, it)
+        }
+    }
+
+    private fun logErr(credentialName: String, res: Response) {
+        val bodyContent = res.body?.string()
+        val errMsg = "send wework bot message failed, notifyChannelName[$credentialName], res[$bodyContent]"
+        if (!res.isSuccessful) {
+            logger.error(errMsg)
+        } else {
+            val weworkBotResponse = bodyContent?.readJsonString<WeworkBotResponse>()
+            if (weworkBotResponse?.errCode == ERR_CODE_INVALID_CHAT_ID) {
+                logger.warn(errMsg)
+            } else if (weworkBotResponse?.errCode != 0) {
+                logger.error(errMsg)
             }
         }
     }
@@ -93,5 +106,6 @@ class WeworkBotClient(
         private val logger = LoggerFactory.getLogger(WeworkBotClient::class.java)
         private const val DEFAULT_API_HOST = "https://qyapi.weixin.qq.com"
         private const val API_SEND_MESSAGE = "/cgi-bin/webhook/send"
+        private const val ERR_CODE_INVALID_CHAT_ID = 93006
     }
 }

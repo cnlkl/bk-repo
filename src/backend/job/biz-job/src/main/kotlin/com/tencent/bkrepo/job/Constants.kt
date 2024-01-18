@@ -33,11 +33,6 @@ package com.tencent.bkrepo.job
 const val SHARDING_COUNT = 256
 
 /**
- * mongodb 最小id
- */
-const val MIN_OBJECT_ID = "000000000000000000000000"
-
-/**
  * 一次处理数据量
  */
 const val BATCH_SIZE = 1000
@@ -45,7 +40,6 @@ const val BATCH_SIZE = 1000
 /**
  * 数据库字段
  */
-const val ID = "_id"
 const val SHA256 = "sha256"
 const val PROJECT = "projectId"
 const val REPO = "repoName"
@@ -56,6 +50,16 @@ const val TYPE = "type"
 const val CATEGORY = "category"
 const val CREATED_DATE = "createdDate"
 const val LAST_MODIFIED_DATE = "lastModifiedDate"
+const val LAST_ACCESS_DATE = "lastAccessDate"
+const val DELETED_DATE = "deleted"
+const val FULL_PATH = "fullPath"
+const val PATH = "path"
+
+/**
+ * 缓存类型
+ */
+const val REDIS_CACHE_TYPE = "redis"
+const val MEMORY_CACHE_TYPE = "memory"
 
 /**
  * metrics
@@ -75,3 +79,5 @@ const val JOB_TASK_COUNT = "job.task.count"
 const val JOB_TASK_COUNT_DESC = "任务执行统计"
 const val JOB_TIME_CONSUME = "job.task.time"
 const val JOB_TIME_CONSUME_DESC = "任务执行时长统计"
+
+val IGNORE_PROJECT_PREFIX_LIST = listOf("CODE_", "CLOSED_SOURCE_")

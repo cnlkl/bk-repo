@@ -28,6 +28,13 @@ export default {
             body
         )
     },
+    // 更新集群节点
+    updateCluster (_, { body }) {
+        return Vue.prototype.$ajax.post(
+            `${prefix}/cluster/update`,
+            body
+        )
+    },
     // 删除集群节点
     deleteCluster (_, { id }) {
         return Vue.prototype.$ajax.delete(
@@ -35,7 +42,7 @@ export default {
         )
     },
     // 查询分发计划
-    getPlanList (_, { projectId, name, enabled, lastExecutionStatus, sortType = 'CREATED_TIME', current = 1, limit = 10 }) {
+    getPlanList (_, { projectId, name, enabled, lastExecutionStatus, sortType = 'CREATED_TIME', sortDirection, current = 1, limit = 10 }) {
         return Vue.prototype.$ajax.get(
             `${prefix}/task/page/${projectId}`,
             {
@@ -43,6 +50,7 @@ export default {
                     name,
                     enabled,
                     sortType,
+                    sortDirection,
                     lastExecutionStatus,
                     pageNumber: current,
                     pageSize: limit

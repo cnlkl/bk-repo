@@ -29,6 +29,9 @@ package com.tencent.bkrepo.replication.api
 
 import com.tencent.bkrepo.common.api.constant.REPLICATION_SERVICE_NAME
 import com.tencent.bkrepo.common.api.pojo.Response
+import com.tencent.bkrepo.common.artifact.pojo.RepositoryType
+import com.tencent.bkrepo.replication.constant.BLOB_CHECK_URI
+import com.tencent.bkrepo.replication.constant.BLOB_PULL_URI
 import com.tencent.bkrepo.replication.constant.FeignResponse
 import com.tencent.bkrepo.replication.pojo.blob.BlobPullRequest
 import org.springframework.cloud.openfeign.FeignClient
@@ -61,12 +64,7 @@ interface BlobReplicaClient {
     @GetMapping(BLOB_CHECK_URI)
     fun check(
         @RequestParam sha256: String,
-        @RequestParam storageKey: String? = null
+        @RequestParam storageKey: String? = null,
+        @RequestParam(required = false) repoType: RepositoryType? = null
     ): Response<Boolean>
-
-    companion object {
-        const val BLOB_PULL_URI = "/replica/blob/pull"
-        const val BLOB_PUSH_URI = "/replica/blob/push"
-        const val BLOB_CHECK_URI = "/replica/blob/check"
-    }
 }

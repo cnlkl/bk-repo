@@ -1,23 +1,26 @@
 // 仓库类型
 export const repoEnum = MODE_CONFIG === 'ci'
     ? [
-        'generic',
-        'helm',
-        'rds',
-        'docker'
+        { label: 'Generic', value: 'generic' },
+        { label: 'DDC', value: 'ddc' },
+        { label: 'Helm', value: 'helm' },
+        { label: 'Docker', value: 'docker' },
+        // { label: 'Rds', value: 'rds' },
+        { label: 'Nuget', value: 'nuget' }
     ]
     : [
-        'generic',
-        'docker',
-        'maven',
-        'pypi',
-        'npm',
-        'helm',
-        'rds',
-        'composer',
-        'rpm'
-        // 'git',
-        // 'nuget'
+        { label: 'Generic', value: 'generic' },
+        { label: 'DDC', value: 'ddc' },
+        { label: 'Docker', value: 'docker' },
+        { label: 'Maven', value: 'maven' },
+        { label: 'Pypi', value: 'pypi' },
+        { label: 'Npm', value: 'npm' },
+        { label: 'Helm', value: 'helm' },
+        // { label: 'Rds', value: 'rds' },
+        { label: 'Composer', value: 'composer' },
+        { label: 'Rpm', value: 'rpm' },
+        { label: 'Git', value: 'git' },
+        { label: 'Nuget', value: 'nuget' }
     ]
 
 // 文件类型
@@ -82,8 +85,8 @@ export const asyncPlanStatusEnum = {
 export const scanTypeEnum = {
     GENERIC: 'Generic制品分析',
     DOCKER: 'Docker制品分析',
-    MAVEN: 'Maven制品分析'
-    // NPM: 'Npm制品分析',
+    MAVEN: 'Maven制品分析',
+    NPM: 'Npm制品分析'
     // PYPI: 'Pypi制品分析'
 }
 
@@ -120,8 +123,33 @@ export const scanStatusEnum = {
 
 // 漏洞风险等级
 export const leakLevelEnum = {
-    CRITICAL: '危急',
-    HIGH: '高级',
-    MEDIUM: '中级',
-    LOW: '低级'
+    CRITICAL: '严重',
+    HIGH: '高危',
+    MEDIUM: '中危',
+    LOW: '低危'
 }
+
+// 匹配规则时忽略
+export const FILTER_RULE_IGNORE = 0
+
+// 未匹配规则时忽略
+export const FILTER_RULE_INCLUDE = 1
+
+// 通过漏洞ID过滤
+export const FILTER_METHOD_VUL_ID = 0
+
+// 通过漏洞等级过滤
+export const FILTER_METHOD_SEVERITY = 1
+
+// 通过风险组件名过滤
+export const FILTER_METHOD_RISKY_COMPONENT = 2
+// 通过风险组件版本过滤
+export const FILTER_METHOD_RISKY_COMPONENT_VERSION = 3
+
+// 特殊的4个repo仓名称
+export const specialRepoEnum = [
+    'log',
+    'pipeline',
+    'report',
+    'custom'
+]

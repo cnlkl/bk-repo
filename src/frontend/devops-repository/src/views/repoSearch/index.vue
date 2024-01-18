@@ -8,7 +8,7 @@
                     style="width:390px"
                     v-model.trim="packageName"
                     size="large"
-                    :placeholder="$t('pleaseInput') + $t('packageName')"
+                    :placeholder="$t('pleaseInput') + $t('space') + $t('packageName')"
                     @enter="changePackageName()">
                 </bk-input>
                 <i class="name-search devops-icon icon-search flex-center" @click="changePackageName()"></i>
@@ -18,16 +18,16 @@
                 </div>
                 <div v-if="resultList.length !== 0 || repoList[0].children.length !== 0" class="sort-tool flex-align-center">
                     <bk-select
-                        style="width:150px;"
+                        style="width:220px;"
                         v-model="property"
                         :clearable="false"
                         @change="changeSortType">
-                        <bk-option id="name" name="名称排序"></bk-option>
-                        <bk-option id="lastModifiedDate" name="最后修改时间排序"></bk-option>
-                        <bk-option id="createdDate" name="最初创建时间排序"></bk-option>
-                        <bk-option id="downloads" name="下载量排序"></bk-option>
+                        <bk-option id="name" :name="$t('nameSorting')"></bk-option>
+                        <bk-option id="lastModifiedDate" :name="$t('lastModifiedTimeSorting')"></bk-option>
+                        <bk-option id="createdDate" :name="$t('creatTimeSorting')"></bk-option>
+                        <bk-option id="downloads" :name="$t('downloadSorting')"></bk-option>
                     </bk-select>
-                    <bk-popover :content="`切换为${direction === 'ASC' ? '降序' : '升序'}`" placement="top">
+                    <bk-popover :content="focusContent + ' ' + `${direction === 'ASC' ? $t('desc') : $t('asc')}`" placement="top">
                         <div class="ml10 sort-order flex-center" @click="changeDirection">
                             <Icon :name="`order-${direction.toLowerCase()}`" size="16"></Icon>
                         </div>
@@ -48,7 +48,7 @@
                     <template #icon><span></span></template>
                     <template #text="{ item: { name } }">
                         <div class="flex-1 flex-between-center">
-                            <span class="text-overflow">{{ name }}</span>
+                            <span class="text-overflow" :title="name.length > 19 ? name : ''">{{ name }}</span>
                         </div>
                     </template>
                 </repo-tree>
@@ -105,7 +105,7 @@
                 packageName: this.$route.query.packageName || '',
                 repoType: this.$route.query.repoType || 'generic',
                 repoList: [{
-                    name: '全部',
+                    name: this.$t('total'),
                     roadMap: '0',
                     children: []
                 }],
@@ -118,7 +118,10 @@
                     count: 0
                 },
                 resultList: [],
-                hasNext: true
+                hasNext: true,
+                focusContent: this.$t('toggle'),
+                repoNames: [],
+                init: false
             }
         },
         computed: {
@@ -156,7 +159,7 @@
                     packageName: this.packageName || ''
                 }).then(([item]) => {
                     this.repoList = [{
-                        name: '全部',
+                        name: this.$t('total'),
                         roadMap: '0',
                         children: item.repos.map((child, i) => {
                             return {
@@ -179,6 +182,7 @@
                     projectId: this.projectId,
                     repoType: this.repoType,
                     repoName: this.repoName,
+                    repoNames: this.repoNames,
                     packageName: this.packageName,
                     property: this.property,
                     direction: this.direction,
@@ -197,8 +201,7 @@
             handlerPaginationChange ({ current = 1, limit = this.pagination.limit } = {}, scrollLoad = false) {
                 this.pagination.current = current
                 this.pagination.limit = limit
-                this.searckPackageHandler(scrollLoad)
-                !scrollLoad && this.$refs.infiniteScroll && this.$refs.infiniteScroll.scrollToTop()
+                this.changeQuery(scrollLoad)
             },
             changeSortType () {
                 this.refreshRoute()
@@ -210,8 +213,11 @@
                 this.handlerPaginationChange()
             },
             changeRepoType (repoType) {
-                this.repoType = repoType
-                this.packageName = ''
+                // 制品搜索页，当切换制品类型时将搜索的包名参数重置为空，否则不重置，解决复制url导致搜索参数丢失的问题
+                if (this.repoType !== repoType) {
+                    this.packageName = ''
+                    this.repoType = repoType
+                }
                 this.changePackageName()
             },
             changePackageName () {
@@ -286,6 +292,27 @@
                     permits: '',
                     time: 7
                 })
+            },
+            // ci模式下generic的查询repoName的NIN条件会和repoType的In组装条件会异常（更改为传递查询repoName，去掉repoType传递）
+            changeQuery (scrollLoad) {
+                if (this.repoType === 'generic' && MODE_CONFIG === 'ci' && !this.init) {
+                    this.searchRepoList({
+                        projectId: this.projectId,
+                        repoType: this.repoType,
+                        packageName: this.packageName || ''
+                    }).then(([item]) => {
+                        item.repos.forEach(item => {
+                            this.repoNames.push(item.repoName)
+                        })
+                        this.init = true
+                        this.searckPackageHandler(scrollLoad)
+                        !scrollLoad && this.$refs.infiniteScroll && this.$refs.infiniteScroll.scrollToTop()
+                    })
+                } else {
+                    this.init = true
+                    this.searckPackageHandler(scrollLoad)
+                    !scrollLoad && this.$refs.infiniteScroll && this.$refs.infiniteScroll.scrollToTop()
+                }
             }
         }
     }

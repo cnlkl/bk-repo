@@ -31,12 +31,14 @@ import com.tencent.bkrepo.common.api.constant.REPOSITORY_SERVICE_NAME
 import com.tencent.bkrepo.common.api.pojo.Page
 import com.tencent.bkrepo.common.api.pojo.Response
 import com.tencent.bkrepo.repository.pojo.metadata.MetadataSaveRequest
+import com.tencent.bkrepo.repository.pojo.node.NodeDeleteResult
 import com.tencent.bkrepo.repository.pojo.node.NodeDetail
 import com.tencent.bkrepo.repository.pojo.node.NodeInfo
 import com.tencent.bkrepo.repository.pojo.node.NodeListOption
 import com.tencent.bkrepo.repository.pojo.node.NodeSizeInfo
 import com.tencent.bkrepo.repository.pojo.node.service.NodeCreateRequest
 import com.tencent.bkrepo.repository.pojo.node.service.NodeDeleteRequest
+import com.tencent.bkrepo.repository.pojo.node.service.NodeLinkRequest
 import com.tencent.bkrepo.repository.pojo.node.service.NodeRenameRequest
 import com.tencent.bkrepo.repository.pojo.node.service.NodeSetLengthRequest
 import com.tencent.bkrepo.repository.pojo.repo.RepositoryDetail
@@ -71,7 +73,7 @@ interface RRepositoryClient {
     ): Mono<Response<Page<NodeInfo>>>
 
     @DeleteMapping("/node/delete")
-    fun deleteNode(@RequestBody nodeDeleteRequest: NodeDeleteRequest): Mono<Response<Void>>
+    fun deleteNode(@RequestBody nodeDeleteRequest: NodeDeleteRequest): Mono<Response<NodeDeleteResult>>
 
     @PostMapping("/node/rename")
     fun renameNode(@RequestBody nodeRenameRequest: NodeRenameRequest): Mono<Response<Void>>
@@ -86,8 +88,12 @@ interface RRepositoryClient {
     fun computeSize(
         @PathVariable projectId: String,
         @PathVariable repoName: String,
-        @RequestParam fullPath: String
+        @RequestParam fullPath: String,
+        @RequestParam estimated: Boolean = false
     ): Mono<Response<NodeSizeInfo>>
+
+    @PostMapping("/node/link")
+    fun link(@RequestBody nodeLinkRequest: NodeLinkRequest): Mono<Response<NodeDetail>>
 
     @GetMapping("/repo/detail/{projectId}/{repoName}")
     fun getRepoDetail(
@@ -111,4 +117,10 @@ interface RRepositoryClient {
         @PathVariable repoName: String,
         @RequestParam fullPath: String
     ): Mono<Response<Map<String, Any>>>
+
+    @GetMapping("/repo/stat/{projectId}/{repoName}")
+    fun statRepo(
+        @PathVariable projectId: String,
+        @PathVariable repoName: String,
+    ): Mono<Response<NodeSizeInfo>>
 }

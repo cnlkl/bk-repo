@@ -12,26 +12,40 @@
                     <bk-form-item :label="$t('repoAddress')">
                         <span>{{repoAddress}}</span>
                     </bk-form-item>
-                    <bk-form-item label="访问权限">
+                    <bk-form-item :label="$t('accessPermission')">
                         <card-radio-group
                             v-model="available"
                             :list="availableList">
                         </card-radio-group>
                     </bk-form-item>
+                    <bk-form-item :label="$t('isDisplay')">
+                        <bk-radio-group v-model="repoBaseInfo.display">
+                            <bk-radio class="mr20" :value="true">{{ $t('enable') }}</bk-radio>
+                            <bk-radio :value="false">{{ $t('disable') }}</bk-radio>
+                        </bk-radio-group>
+                    </bk-form-item>
+                    <bk-form-item
+                        :label="$t('bkPermissionCheck')"
+                        v-if="!specialRepoEnum.includes(repoBaseInfo.name) && rbacStatus">
+                        <bk-radio-group v-model="repoBaseInfo.configuration.settings.bkiamv3Check">
+                            <bk-radio class="mr20" :value="true">{{ $t('open') }}</bk-radio>
+                            <bk-radio :value="false">{{ $t('close') }}</bk-radio>
+                        </bk-radio-group>
+                    </bk-form-item>
                     <template v-if="repoType === 'generic'">
                         <bk-form-item v-for="type in genericInterceptorsList" :key="type"
                             :label="$t(`${type}Download`)" :property="`${type}.enable`">
                             <bk-radio-group v-model="repoBaseInfo[type].enable">
-                                <bk-radio class="mr20" :value="true">{{ $t('open') }}</bk-radio>
-                                <bk-radio :value="false">{{ $t('close') }}</bk-radio>
+                                <bk-radio class="mr20" :value="true">{{ $t('enable') }}</bk-radio>
+                                <bk-radio :value="false">{{ $t('disable') }}</bk-radio>
                             </bk-radio-group>
                             <template v-if="repoBaseInfo[type].enable && ['mobile', 'web'].includes(type)">
-                                <bk-form-item :label="$t('fileName')" :label-width="60" class="mt10"
+                                <bk-form-item :label="$t('fileName')" :label-width="80" class="mt10"
                                     :property="`${type}.filename`" required error-display-type="normal">
                                     <bk-input class="w250" v-model.trim="repoBaseInfo[type].filename"></bk-input>
                                     <i class="bk-icon icon-info f14 ml5" v-bk-tooltips="$t('fileNameRule')"></i>
                                 </bk-form-item>
-                                <bk-form-item :label="$t('metadata')" :label-width="60"
+                                <bk-form-item :label="$t('metadata')" :label-width="80"
                                     :property="`${type}.metadata`" required error-display-type="normal">
                                     <bk-input class="w250" v-model.trim="repoBaseInfo[type].metadata" :placeholder="$t('metadataRule')"></bk-input>
                                     <a class="f12 ml5" href="https://docs.bkci.net/services/bkrepo/meta" target="__blank">{{ $t('viewMetadataDocument') }}</a>
@@ -47,7 +61,7 @@
                                 <bk-form-item :label="$t('whiteUser')" :label-width="150"
                                     :property="`${type}.whitelistUser`" error-display-type="normal">
                                     <bk-input v-if="isCommunity" class="w250" v-model.trim="repoBaseInfo[type].whitelistUser" :placeholder="$t('whiteUserPlaceholder')"></bk-input>
-                                    <bk-member-selector v-else v-model="repoBaseInfo[type].whitelistUser" class="w250" :placeholder="$t('whiteUserPlaceholder')"></bk-member-selector>
+                                    <bk-member-selector v-else v-model="repoBaseInfo[type].whitelistUser" class="member-selector" :placeholder="$t('whiteUserPlaceholder')"></bk-member-selector>
                                 </bk-form-item>
                             </template>
                         </bk-form-item>
@@ -82,7 +96,7 @@
                             maxlength="200"
                             :rows="6"
                             v-model.trim="repoBaseInfo.description"
-                            :placeholder="$t('repoDescriptionPlacehodler')">
+                            :placeholder="$t('repoDescriptionPlaceholder')">
                         </bk-input>
                     </bk-form-item>
                     <bk-form-item>
@@ -93,27 +107,32 @@
             <bk-tab-panel render-directive="if" v-if="showProxyConfigTab" name="proxyConfig" :label="$t('proxyConfig')">
                 <proxy-config :base-data="repoBaseInfo" @refresh="getRepoInfoHandler"></proxy-config>
             </bk-tab-panel>
-            <!-- <bk-tab-panel v-if="showCleanConfigTab" name="cleanConfig" label="清理设置">
+            <bk-tab-panel v-if="showCleanConfigTab" name="cleanConfig" :label="$t('cleanConfig')">
                 <clean-config :base-data="repoBaseInfo" @refresh="getRepoInfoHandler"></clean-config>
-            </bk-tab-panel> -->
-            <!-- <bk-tab-panel render-directive="if" name="permissionConfig" :label="$t('permissionConfig')">
-                <permission-config></permission-config>
-            </bk-tab-panel> -->
+            </bk-tab-panel>
+            <bk-tab-panel render-directive="if" v-if="showPermissionConfigTab" name="permissionConfig" :label="$t('permissionConfig')">
+                <permission-config :base-data="repoBaseInfo" @refresh="getRepoInfoHandler"></permission-config>
+            </bk-tab-panel>
         </bk-tab>
+        <iam-deny-dialog :visible.sync="showIamDenyDialog" :show-data="showData"></iam-deny-dialog>
     </div>
 </template>
 <script>
     import CardRadioGroup from '@repository/components/CardRadioGroup'
     import proxyConfig from '@repository/views/repoConfig/proxyConfig'
-    // import cleanConfig from '@repository/views/repoConfig/cleanConfig'
-    // import permissionConfig from './permissionConfig'
+    import iamDenyDialog from '@repository/components/IamDenyDialog/IamDenyDialog'
+    import permissionConfig from './permissionConfig/permissionConfig'
+    import cleanConfig from '@repository/views/repoConfig/cleanConfig'
     import { mapState, mapActions } from 'vuex'
+    import { specialRepoEnum } from '@repository/store/publicEnum'
     export default {
         name: 'repoConfig',
         components: {
             CardRadioGroup,
-            proxyConfig
-            // cleanConfig
+            proxyConfig,
+            iamDenyDialog,
+            permissionConfig,
+            cleanConfig
         },
         data () {
             const filenameRule = [
@@ -154,6 +173,7 @@
                 }
             ]
             return {
+                specialRepoEnum,
                 tabName: 'baseInfo',
                 isLoading: false,
                 repoBaseInfo: {
@@ -162,6 +182,7 @@
                     public: false,
                     system: false,
                     repoType: '',
+                    display: true,
                     enabledFileLists: false,
                     repodataDepth: 0,
                     groupXmlSet: [],
@@ -181,15 +202,23 @@
                         officeNetwork: false,
                         ipSegment: '',
                         whitelistUser: ''
+                    },
+                    configuration: {
+                        settings: {
+                            bkiamv3Check: false
+                        }
                     }
                 },
                 filenameRule,
                 metadataRule,
-                ipSegmentRule
+                ipSegmentRule,
+                showIamDenyDialog: false,
+                showData: {},
+                rbacStatus: false
             }
         },
         computed: {
-            ...mapState(['domain']),
+            ...mapState(['domain', 'userInfo']),
             projectId () {
                 return this.$route.params.projectId
             },
@@ -203,7 +232,10 @@
                 return ['maven', 'pypi', 'npm', 'composer', 'nuget'].includes(this.repoType)
             },
             showCleanConfigTab () {
-                return ['maven', 'docker', 'npm', 'helm', 'generic'].includes(this.repoType)
+                return ['docker', 'generic', 'helm'].includes(this.repoType)
+            },
+            showPermissionConfigTab () {
+                return ['generic'].includes(this.repoType) && (this.userInfo.admin || this.userInfo.manage) && !(['pipeline', 'custom'].includes(this.repoName))
             },
             repoAddress () {
                 const { repoType, name } = this.repoBaseInfo
@@ -231,9 +263,9 @@
             },
             availableList () {
                 return [
-                    { label: '项目内公开', value: 'project', tip: '项目内成员可以使用' },
+                    { label: this.$t('openProjectLabel'), value: 'project', tip: this.$t('openProjectTip') },
                     // { label: '系统内公开', value: 'system', tip: '系统内成员可以使用' },
-                    { label: '可匿名下载', value: 'public', tip: '不鉴权，任意终端都可下载' }
+                    { label: this.$t('openPublicLabel'), value: 'public', tip: this.$t('openPublicTip') }
                 ]
             },
             rules () {
@@ -241,7 +273,7 @@
                     repodataDepth: [
                         {
                             regex: /^(0|[1-9][0-9]*)$/,
-                            message: this.$t('pleaseInput') + this.$t('legit') + this.$t('repodataDepth'),
+                            message: this.$t('pleaseInput') + this.$t('space') + this.$t('legit') + this.$t('space') + this.$t('repodataDepth'),
                             trigger: 'blur'
                         }
                     ],
@@ -252,7 +284,7 @@
                                     return /\.xml$/.test(v)
                                 })
                             },
-                            message: this.$t('pleaseInput') + this.$t('legit') + this.$t('groupXmlSet') + `(.xml${this.$t('type')})`,
+                            message: this.$t('pleaseInput') + this.$t('space') + this.$t('legit') + this.$t('space') + this.$t('groupXmlSet') + this.$t('space') + `(.xml${this.$t('type')})`,
                             trigger: 'change'
                         }
                     ],
@@ -275,12 +307,15 @@
         created () {
             if (!this.repoName || !this.repoType) this.toRepoList()
             this.getRepoInfoHandler()
+            this.getIamPermissionStatus().then(res => {
+                this.rbacStatus = res
+            })
         },
         methods: {
-            ...mapActions(['getRepoInfo', 'updateRepoInfo', 'getDomain']),
+            ...mapActions(['getRepoInfo', 'updateRepoInfo', 'getDomain', 'getPermissionUrl', 'getIamPermissionStatus']),
             toRepoList () {
                 this.$router.push({
-                    name: 'repoList'
+                    name: 'repositories'
                 })
             },
             getRepoInfoHandler () {
@@ -318,6 +353,28 @@
                             }
                         })
                     }
+                }).catch(err => {
+                    if (err.status === 403) {
+                        this.getPermissionUrl({
+                            body: {
+                                projectId: this.projectId,
+                                action: 'READ',
+                                resourceType: 'REPO',
+                                uid: this.userInfo.name,
+                                repoName: this.repoName
+                            }
+                        }).then(res => {
+                            if (res !== '') {
+                                this.showIamDenyDialog = true
+                                this.showData = {
+                                    projectId: this.projectId,
+                                    repoName: this.repoName,
+                                    action: 'READ',
+                                    url: res
+                                }
+                            }
+                        })
+                    }
                 }).finally(() => {
                     this.isLoading = false
                 })
@@ -348,6 +405,7 @@
                 const body = {
                     public: this.repoBaseInfo.public,
                     description: this.repoBaseInfo.description,
+                    display: this.repoBaseInfo.display,
                     configuration: {
                         ...this.repoBaseInfo.configuration,
                         settings: {
@@ -365,6 +423,9 @@
                         }
                     }
                 }
+                if (!specialRepoEnum.includes(this.repoBaseInfo.name)) {
+                    body.configuration.settings.bkiamv3Check = this.repoBaseInfo.configuration.settings.bkiamv3Check
+                }
                 this.repoBaseInfo.loading = true
                 this.updateRepoInfo({
                     projectId: this.projectId,
@@ -374,8 +435,40 @@
                     this.getRepoInfoHandler()
                     this.$bkMessage({
                         theme: 'success',
-                        message: this.$t('save') + this.$t('success')
+                        message: this.$t('save') + this.$t('space') + this.$t('success')
                     })
+                }).catch(err => {
+                    if (err.status === 403) {
+                        this.getPermissionUrl({
+                            body: {
+                                projectId: this.projectId,
+                                action: 'MANAGE',
+                                resourceType: 'REPO',
+                                uid: this.userInfo.name,
+                                repoName: this.repoName
+                            }
+                        }).then(res => {
+                            if (res !== '') {
+                                this.showIamDenyDialog = true
+                                this.showData = {
+                                    projectId: this.projectId,
+                                    repoName: this.repoName,
+                                    action: 'MANAGE',
+                                    url: res
+                                }
+                            } else {
+                                this.$bkMessage({
+                                    theme: 'error',
+                                    message: err.message
+                                })
+                            }
+                        })
+                    } else {
+                        this.$bkMessage({
+                            theme: 'error',
+                            message: err.message
+                        })
+                    }
                 }).finally(() => {
                     this.repoBaseInfo.loading = false
                 })
@@ -395,6 +488,12 @@
         }
         .repo-base-info {
             max-width: 800px;
+            .member-selector{
+                ::v-deep.bk-tag-selector .bk-tag-input {
+                    height: auto;
+                }
+                width: 250px;
+            }
         }
     }
 }

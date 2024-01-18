@@ -10,21 +10,21 @@
                 <bk-form-item :label="$t('createFolderLabel')" :required="true" property="path" error-display-type="normal">
                     <bk-input v-model.trim="genericForm.path"
                         type="textarea" :rows="6"
-                        :placeholder="$t('folderPathPlacehodler')">
+                        :placeholder="$t('folderPathPlaceholder')">
                     </bk-input>
-                    <div class="form-tip">支持 / 分隔符级联创建文件夹</div>
+                    <div class="form-tip">{{$t('genericFormTip')}}</div>
                 </bk-form-item>
             </template>
             <template v-else-if="genericForm.type === 'rename'">
                 <bk-form-item :label="$t('file') + $t('name')" :required="true" property="name" error-display-type="normal">
-                    <bk-input v-model.trim="genericForm.name" :placeholder="$t('folderNamePlacehodler')" maxlength="255" show-word-limit></bk-input>
+                    <bk-input v-model.trim="genericForm.name" :placeholder="$t('folderNamePlaceholder')" maxlength="255" show-word-limit></bk-input>
                 </bk-form-item>
             </template>
             <template v-else-if="genericForm.type === 'scan'">
-                <bk-form-item label="扫描方案" :required="true" property="id" error-display-type="normal">
+                <bk-form-item :label="$t('scanScheme')" :required="true" property="id" error-display-type="normal">
                     <bk-select
                         v-model="genericForm.id"
-                        placeholder="请选择扫描方案">
+                        :placeholder="$t('scanningSchemeTip')">
                         <bk-option v-for="scan in scanList" :key="scan.id" :id="scan.id" :name="scan.name"></bk-option>
                     </bk-select>
                 </bk-form-item>
@@ -34,12 +34,17 @@
             <bk-button theme="default" @click="cancel">{{$t('cancel')}}</bk-button>
             <bk-button class="ml10" :loading="genericForm.loading" theme="primary" @click="submit">{{$t('confirm')}}</bk-button>
         </template>
+        <iam-deny-dialog :visible.sync="showIamDenyDialog" :show-data="showData"></iam-deny-dialog>
     </canway-dialog>
 </template>
 <script>
-    import { mapActions } from 'vuex'
+    import { mapActions, mapState } from 'vuex'
+    import iamDenyDialog from '@repository/components/IamDenyDialog/IamDenyDialog'
     export default {
         name: 'genericForm',
+        components: {
+            iamDenyDialog
+        },
         data () {
             return {
                 genericForm: {
@@ -56,39 +61,43 @@
                     path: [
                         {
                             required: true,
-                            message: this.$t('pleaseInput') + this.$t('folder') + this.$t('path'),
+                            message: this.$t('pleaseInput') + this.$t('space') + this.$t('folder') + this.$t('space') + this.$t('path'),
                             trigger: 'blur'
                         },
                         {
-                            regex: /^(\/[^\\:*?"<>|]{1,50})+$/,
-                            message: this.$t('folderPathPlacehodler'),
+                            regex: /^(\/[^\\:*?"<>|]{1,255})+$/,
+                            message: this.$t('folderPathPlaceholder'),
                             trigger: 'blur'
                         }
                     ],
                     name: [
                         {
                             required: true,
-                            message: this.$t('pleaseInput') + this.$t('fileName'),
+                            message: this.$t('pleaseInput') + this.$t('space') + this.$t('fileName'),
                             trigger: 'blur'
                         },
                         {
-                            regex: /^([^\\/:*?"<>|]){1,50}$/,
-                            message: this.$t('folderNamePlacehodler'),
+                            regex: /^([^\\/:*?"<>|]){1,255}$/,
+                            message: this.$t('folderNamePlaceholder'),
                             trigger: 'blur'
                         }
                     ],
                     id: [
                         {
                             required: true,
-                            message: this.$t('pleaseSelect') + '扫描方案',
+                            message: this.$t('pleaseSelect') + this.$t('space') + this.$t('scanScheme'),
                             trigger: 'change'
                         }
                     ]
                 },
-                scanList: []
+                scanList: [],
+                showIamDenyDialog: false,
+                showData: {},
+                webError: false
             }
         },
         computed: {
+            ...mapState(['userInfo']),
             projectId () {
                 return this.$route.params.projectId
             },
@@ -101,7 +110,8 @@
                 'createFolder',
                 'renameNode',
                 'startScanSingle',
-                'getScanAll'
+                'getScanAll',
+                'getPermissionUrl'
             ]),
             setData (data) {
                 this.genericForm = {
@@ -133,21 +143,91 @@
                 })
             },
             submitAddFolder () {
+                this.webError = false
                 return this.createFolder({
                     projectId: this.projectId,
                     repoName: this.repoName,
                     fullPath: this.genericForm.path.replace(/\/+/g, '/')
+                }).catch(err => {
+                    if (err.status === 403) {
+                        this.webError = true
+                        this.getPermissionUrl({
+                            body: {
+                                projectId: this.projectId,
+                                action: 'WRITE',
+                                resourceType: 'REPO',
+                                uid: this.userInfo.name,
+                                repoName: this.repoName
+                            }
+                        }).then(res => {
+                            if (res !== '') {
+                                this.showIamDenyDialog = true
+                                this.showData = {
+                                    projectId: this.projectId,
+                                    repoName: this.repoName,
+                                    action: 'WRITE',
+                                    url: res
+                                }
+                            } else {
+                                this.$bkMessage({
+                                    theme: 'error',
+                                    message: err.message
+                                })
+                            }
+                        })
+                    } else {
+                        this.$bkMessage({
+                            theme: 'error',
+                            message: err.message
+                        })
+                    }
                 })
             },
             submitRenameNode () {
+                this.webError = false
                 return this.renameNode({
                     projectId: this.projectId,
                     repoName: this.repoName,
                     fullPath: this.genericForm.path,
                     newFullPath: this.genericForm.path.replace(/[^/]*$/, this.genericForm.name)
+                }).catch(err => {
+                    if (err.status === 403) {
+                        this.webError = true
+                        this.getPermissionUrl({
+                            body: {
+                                projectId: this.projectId,
+                                action: 'UPDATE',
+                                resourceType: 'NODE',
+                                uid: this.userInfo.name,
+                                repoName: this.repoName,
+                                path: this.genericForm.path
+                            }
+                        }).then(res => {
+                            if (res !== '') {
+                                this.showIamDenyDialog = true
+                                this.showData = {
+                                    projectId: this.projectId,
+                                    repoName: this.repoName,
+                                    action: 'UPDATE',
+                                    url: res
+                                }
+                            } else {
+                                this.$bkMessage({
+                                    theme: 'error',
+                                    message: err.message
+                                })
+                            }
+                        })
+                    } else {
+                        this.$bkMessage({
+                            theme: 'error',
+                            message: err.message
+                        })
+                    }
                 })
             },
             submitScanFile () {
+                this.webError = false
                 const { id, path } = this.genericForm
                 return this.startScanSingle({
                     id,
@@ -155,6 +235,40 @@
                     repoType: 'GENERIC',
                     repoName: this.repoName,
                     fullPath: path
+                }).catch(err => {
+                    if (err.status === 403) {
+                        this.webError = true
+                        this.getPermissionUrl({
+                            body: {
+                                projectId: this.projectId,
+                                action: 'UPDATE',
+                                resourceType: 'NODE',
+                                uid: this.userInfo.name,
+                                repoName: this.repoName,
+                                path: this.genericForm.path
+                            }
+                        }).then(res => {
+                            if (res !== '') {
+                                this.showIamDenyDialog = true
+                                this.showData = {
+                                    projectId: this.projectId,
+                                    repoName: this.repoName,
+                                    action: 'UPDATE',
+                                    url: res
+                                }
+                            } else {
+                                this.$bkMessage({
+                                    theme: 'error',
+                                    message: err.message
+                                })
+                            }
+                        })
+                    } else {
+                        this.$bkMessage({
+                            theme: 'error',
+                            message: err.message
+                        })
+                    }
                 })
             },
             submitGenericForm () {
@@ -164,7 +278,7 @@
                 switch (this.genericForm.type) {
                     case 'add':
                         fn = this.submitAddFolder()
-                        message = this.$t('create') + this.$t('folder')
+                        message = this.$t('create') + this.$t('space') + this.$t('folder')
                         break
                     case 'rename':
                         fn = this.submitRenameNode()
@@ -172,15 +286,17 @@
                         break
                     case 'scan':
                         fn = this.submitScanFile()
-                        message = '加入扫描队列'
+                        message = this.$t('joinScanMsg')
                         break
                 }
                 fn.then(() => {
                     this.$emit('refresh')
-                    this.$bkMessage({
-                        theme: 'success',
-                        message: message + this.$t('success')
-                    })
+                    if (!this.webError) {
+                        this.$bkMessage({
+                            theme: 'success',
+                            message: message + this.$t('space') + this.$t('success')
+                        })
+                    }
                     this.genericForm.show = false
                 }).finally(() => {
                     this.genericForm.loading = false

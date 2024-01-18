@@ -29,9 +29,6 @@ package com.tencent.bkrepo.replication.constant
 
 const val DEFAULT_VERSION = "1.0.0"
 
-const val BEARER_REALM = "Bearer realm"
-const val SERVICE = "service"
-const val SCOPE = "scope"
 const val REPOSITORY = "repository"
 const val URL = "url"
 
@@ -43,17 +40,24 @@ const val DOCKER_MANIFEST_JSON_FULL_PATH = "/%s/%s/manifest.json"
 const val DOCKER_LAYER_FULL_PATH = "/%s/%s/%s"
 const val OCI_MANIFEST_JSON_FULL_PATH = "/%s/manifest/%s/manifest.json"
 const val OCI_LAYER_FULL_PATH = "/%s/blobs/%s"
+const val OCI_LAYER_FULL_PATH_V1 = "/%s/blobs/%s/%s"
+const val BLOB_PATH_REFRESHED_KEY = "blobPathRefreshed"
 const val NODE_FULL_PATH = "fullPath"
 const val SIZE = "size"
 const val REPOSITORY_INFO = "repo"
 const val SHA256 = "sha256"
+const val MD5 = "md5"
 const val FILE = "file"
 const val STORAGE_KEY = "storageKey"
+const val CHUNKED_UPLOAD = "chunkedUpload"
 
 const val PIPELINE_ID = "pipelineId"
 const val BUILD_ID = "buildId"
 const val TASK_ID = "taskId"
 const val NAME = "name"
+
+const val RETRY_COUNT = 2
+const val DELAY_IN_SECONDS: Long = 1
 
 /**
  * metrics
@@ -90,3 +94,6 @@ const val MANUAL_TASK_ACTIVE_COUNT_DESC = "手动执行具体package或者path�
 
 const val MANUAL_TASK_QUEUE_SIZE = "manual.task.queue.size"
 const val MANUAL_TASK_QUEUE_SIZE_DESC = "手动执行具体package或者path分发线程池等待队列大小"
+
+const val EDGE_PULL_ACTIVE_COUNT = "edge.pull.task.active.count"
+const val EDGE_PULL_ACTIVE_COUNT_DESC = "边缘节点主动拉取任务实时执行数量"

@@ -29,6 +29,7 @@ package com.tencent.bkrepo.analyst.statemachine.subtask.action
 
 import com.tencent.bkrepo.analyst.component.manager.ScanExecutorResultManager
 import com.tencent.bkrepo.analyst.component.manager.ScannerConverter
+import com.tencent.bkrepo.analyst.component.manager.standard.StandardConverter
 import com.tencent.bkrepo.analyst.dao.ArchiveSubScanTaskDao
 import com.tencent.bkrepo.analyst.dao.FileScanResultDao
 import com.tencent.bkrepo.analyst.dao.PlanArtifactLatestSubScanTaskDao
@@ -40,6 +41,8 @@ import com.tencent.bkrepo.analyst.metrics.ScannerMetrics
 import com.tencent.bkrepo.analyst.model.TSubScanTask
 import com.tencent.bkrepo.analyst.pojo.ScanTaskStatus
 import com.tencent.bkrepo.analyst.pojo.TaskMetadata
+import com.tencent.bkrepo.analyst.pojo.request.filter.MatchFilterRuleRequest
+import com.tencent.bkrepo.analyst.service.FilterRuleService
 import com.tencent.bkrepo.analyst.service.ScanQualityService
 import com.tencent.bkrepo.analyst.service.ScannerService
 import com.tencent.bkrepo.analyst.statemachine.Action
@@ -51,8 +54,10 @@ import com.tencent.bkrepo.analyst.statemachine.subtask.context.NotifySubtaskCont
 import com.tencent.bkrepo.analyst.statemachine.task.ScanTaskEvent
 import com.tencent.bkrepo.analyst.statemachine.task.context.FinishTaskContext
 import com.tencent.bkrepo.analyst.utils.SubtaskConverter
+import com.tencent.bkrepo.common.analysis.pojo.scanner.ScanExecutorResult
 import com.tencent.bkrepo.common.analysis.pojo.scanner.Scanner
 import com.tencent.bkrepo.common.analysis.pojo.scanner.SubScanTaskStatus
+import com.tencent.bkrepo.common.analysis.pojo.scanner.standard.StandardScanExecutorResult
 import com.tencent.bkrepo.statemachine.Event
 import com.tencent.bkrepo.statemachine.StateMachine
 import com.tencent.bkrepo.statemachine.TransitResult
@@ -76,6 +81,7 @@ class FinishSubtaskAction(
     private val archiveSubScanTaskDao: ArchiveSubScanTaskDao,
     private val scannerService: ScannerService,
     private val scanQualityService: ScanQualityService,
+    private val filterRuleService: FilterRuleService,
     private val scanExecutorResultManagers: Map<String, ScanExecutorResultManager>,
     private val scannerConverters: Map<String, ScannerConverter>,
     private val scannerMetrics: ScannerMetrics,
@@ -97,19 +103,17 @@ class FinishSubtaskAction(
         val context = event.context
         require(context is FinishSubtaskContext)
         with(context) {
-            if (targetState != SubScanTaskStatus.SUCCESS.name) {
-                logger.error(
+            if (targetState != SubScanTaskStatus.SUCCESS.name && targetState != SubScanTaskStatus.STOPPED.name) {
+                logger.warn(
                     "task[${subtask.parentScanTaskId}], subtask[${subtask.id}], " +
-                        "scan failed: $scanExecutorResult"
+                            "scan failed: status[$targetState], reason[$reason], result[$scanExecutorResult]"
                 )
             }
 
             val scanner = scannerService.get(subtask.scanner)
             // 对扫描结果去重
             scanExecutorResult?.normalizeResult()
-            val overview = scanExecutorResult?.let {
-                scannerConverters[ScannerConverter.name(scanner.type)]!!.convertOverview(it)
-            } ?: emptyMap()
+            val overview = scanExecutorResult?.let { overviewOf(subtask, it) } ?: emptyMap()
             // 更新扫描任务结果
             val updateScanTaskResultSuccess = updateScanTaskResult(subtask, targetState, overview)
 
@@ -171,11 +175,12 @@ class FinishSubtaskAction(
 
         // 质量规则检查结果
         val planId = subTask.planId
-        val qualityPass = if (planId != null && overview.isNotEmpty()) {
-            scanQualityService.checkScanQualityRedLine(planId, overview as Map<String, Number>)
-        } else {
+        val qualityPass = if (subTask.scanQuality.isNullOrEmpty() || planId == null) {
             null
+        } else {
+            overview.isEmpty() || scanQualityService.checkScanQualityRedLine(planId, overview as Map<String, Number>)
         }
+        logger.info("subTask[$subTaskId], qualityPass[$qualityPass]")
         archiveSubScanTaskDao.save(
             SubtaskConverter.convertToArchiveSubtask(
                 subTask, resultSubTaskStatus, overview, qualityPass = qualityPass, modifiedBy = modifiedBy
@@ -220,6 +225,33 @@ class FinishSubtaskAction(
 
     override fun support(from: String, to: String, event: String): Boolean {
         return from != SubScanTaskStatus.NEVER_SCANNED.name && SubScanTaskStatus.finishedStatus(to)
+    }
+
+    private fun overviewOf(
+        subtask: TSubScanTask,
+        result: ScanExecutorResult
+    ): Map<String, Any?> {
+        val converter = scannerConverters[ScannerConverter.name(result.type)]!!
+        return if (converter is StandardConverter && result is StandardScanExecutorResult) {
+            val filterRules = filterRuleService.match(
+                MatchFilterRuleRequest(
+                    projectId = subtask.projectId,
+                    repoName = subtask.repoName,
+                    planId = subtask.planId,
+                    fullPath = subtask.fullPath,
+                    packageKey = subtask.packageKey,
+                    packageVersion = subtask.version
+                )
+            )
+            converter.convertOverview(
+                result.output?.result?.securityResults,
+                result.output?.result?.sensitiveResults,
+                result.output?.result?.licenseResults,
+                filterRules
+            )
+        } else {
+            converter.convertOverview(result)
+        }
     }
 
     companion object {

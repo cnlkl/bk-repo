@@ -34,9 +34,9 @@ package com.tencent.bkrepo.common.security.manager
 import com.google.common.cache.CacheBuilder
 import com.google.common.cache.CacheLoader
 import com.google.common.cache.LoadingCache
-import com.tencent.bkrepo.auth.api.ServiceExternalPermissionResource
-import com.tencent.bkrepo.auth.api.ServicePermissionResource
-import com.tencent.bkrepo.auth.api.ServiceUserResource
+import com.tencent.bkrepo.auth.api.ServiceExternalPermissionClient
+import com.tencent.bkrepo.auth.api.ServicePermissionClient
+import com.tencent.bkrepo.auth.api.ServiceUserClient
 import com.tencent.bkrepo.auth.pojo.enums.PermissionAction
 import com.tencent.bkrepo.auth.pojo.enums.ResourceType
 import com.tencent.bkrepo.auth.pojo.externalPermission.ExternalPermission
@@ -52,9 +52,11 @@ import com.tencent.bkrepo.common.artifact.exception.RepoNotFoundException
 import com.tencent.bkrepo.common.artifact.path.PathUtils
 import com.tencent.bkrepo.common.security.exception.AuthenticationException
 import com.tencent.bkrepo.common.security.exception.PermissionException
+import com.tencent.bkrepo.common.security.http.core.HttpAuthProperties
 import com.tencent.bkrepo.common.security.permission.PrincipalType
 import com.tencent.bkrepo.common.security.util.SecurityUtils
 import com.tencent.bkrepo.common.service.util.HttpContextHolder
+import com.tencent.bkrepo.common.service.util.LocaleMessageUtils
 import com.tencent.bkrepo.repository.api.NodeClient
 import com.tencent.bkrepo.repository.api.RepositoryClient
 import com.tencent.bkrepo.repository.constant.NODE_DETAIL_LIST_KEY
@@ -76,10 +78,11 @@ import java.util.concurrent.TimeUnit
  */
 open class PermissionManager(
     private val repositoryClient: RepositoryClient,
-    private val permissionResource: ServicePermissionResource,
-    private val externalPermissionResource: ServiceExternalPermissionResource,
-    private val userResource: ServiceUserResource,
-    private val nodeClient: NodeClient
+    private val permissionResource: ServicePermissionClient,
+    private val externalPermissionResource: ServiceExternalPermissionClient,
+    private val userResource: ServiceUserClient,
+    private val nodeClient: NodeClient,
+    private val httpAuthProperties: HttpAuthProperties
 ) {
 
     private val httpClient =
@@ -159,13 +162,14 @@ open class PermissionManager(
         repoName: String,
         vararg path: String,
         public: Boolean? = null,
-        anonymous: Boolean = false
+        anonymous: Boolean = false,
+        userId: String = SecurityUtils.getUserId()
     ) {
         val repoInfo = queryRepositoryInfo(projectId, repoName)
         if (isReadPublicRepo(action, repoInfo, public)) {
             return
         }
-        if (allowReadSystemRepo(action, repoInfo)) {
+        if (allowReadSystemRepo(action, repoInfo, userId)) {
             return
         }
         // 禁止批量下载流水线节点
@@ -179,7 +183,8 @@ open class PermissionManager(
             projectId = projectId,
             repoName = repoName,
             paths = path.toList(),
-            anonymous = anonymous
+            anonymous = anonymous,
+            userId = userId
         )
     }
 
@@ -197,10 +202,14 @@ open class PermissionManager(
                 throw PermissionException()
             }
         } else if (principalType == PrincipalType.PLATFORM) {
-            if (userId.isNullOrEmpty()) {
+            if (userId.isEmpty()) {
                 logger.warn("platform auth with empty userId[$platformId,$userId]")
             }
             if (platformId == null && !isAdminUser(userId)) {
+                throw PermissionException()
+            }
+        } else if (principalType == PrincipalType.GENERAL) {
+            if (userId.isEmpty() || userId == ANONYMOUS_USER) {
                 throw PermissionException()
             }
         }
@@ -236,7 +245,6 @@ open class PermissionManager(
         if (action != PermissionAction.READ) {
             return false
         }
-        val userId = SecurityUtils.getUserId()
         val platformId = SecurityUtils.getPlatformId()
         checkAnonymous(userId, platformId)
         // 加载仓库信息
@@ -269,6 +277,10 @@ open class PermissionManager(
         anonymous: Boolean = false,
         userId: String = SecurityUtils.getUserId()
     ) {
+        // 判断是否开启认证
+        if (!httpAuthProperties.enabled) {
+            return
+        }
         val platformId = SecurityUtils.getPlatformId()
         checkAnonymous(userId, platformId)
 
@@ -299,15 +311,25 @@ open class PermissionManager(
             repoName = repoName,
             path = paths?.first()
         )
-        if (permissionResource.checkPermission(checkRequest).data != true) {
+        if (checkPermissionFromAuthService(checkRequest) != true) {
             // 无权限，响应403错误
-            var reason = "user[$userId] does not have $action permission in project[$projectId]"
-            repoName?.let { reason += " repo[$repoName]" }
+            val reason: String?
+            if (repoName.isNullOrEmpty()) {
+                val param = arrayOf(userId, action, projectId )
+                reason = LocaleMessageUtils.getLocalizedMessage("permission.project.denied", param)
+            } else {
+                val param = arrayOf(userId, action, projectId, repoName )
+                reason = LocaleMessageUtils.getLocalizedMessage("permission.repo.denied", param)
+            }
             throw PermissionException(reason)
         }
         if (logger.isDebugEnabled) {
             logger.debug("User[${SecurityUtils.getPrincipal()}] check permission success.")
         }
+    }
+
+    open fun checkPermissionFromAuthService(request: CheckPermissionRequest): Boolean? {
+        return permissionResource.checkPermission(request).data
     }
 
     /**
@@ -398,10 +420,7 @@ open class PermissionManager(
         repoName: String,
         paths: List<String>
     ): List<NodeDetail> {
-        var prefix = paths.first()
-        paths.forEach {
-            prefix = PathUtils.getCommonPath(prefix, it)
-        }
+        val prefix = PathUtils.getCommonParentPath(paths)
         var pageNumber = 1
         val nodeDetailList = mutableListOf<NodeDetail>()
         do {
@@ -433,14 +452,14 @@ open class PermissionManager(
                 }
                 logger.info(
                     "check external permission error, url[${request.url}], project[$projectId], repo[$repoName]," +
-                        " nodes$paths, code[${it.code}], response[$content]"
+                            " nodes$paths, code[${it.code}], response[$content]"
                 )
                 throw PermissionException(errorMsg)
             }
         } catch (e: IOException) {
             logger.error(
                 "check external permission error," + "url[${request.url}], project[$projectId], " +
-                    "repo[$repoName], nodes$paths, $e"
+                        "repo[$repoName], nodes$paths, $e"
             )
             throw PermissionException(errorMsg)
         }
@@ -496,8 +515,8 @@ open class PermissionManager(
     /**
      * 判断是否为管理员
      */
-    private fun isAdminUser(userId: String): Boolean {
-        return userResource.detail(userId).data?.admin == true
+    open fun isAdminUser(userId: String): Boolean {
+        return userResource.userInfoById(userId).data?.admin == true
     }
 
 

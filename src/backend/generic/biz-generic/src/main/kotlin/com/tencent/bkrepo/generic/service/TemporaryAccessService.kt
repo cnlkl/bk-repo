@@ -31,6 +31,12 @@
 
 package com.tencent.bkrepo.generic.service
 
+import com.tencent.bkrepo.auth.api.ServiceTemporaryTokenClient
+import com.tencent.bkrepo.auth.pojo.enums.PermissionAction
+import com.tencent.bkrepo.auth.pojo.token.TemporaryTokenCreateRequest
+import com.tencent.bkrepo.auth.pojo.token.TemporaryTokenInfo
+import com.tencent.bkrepo.auth.pojo.token.TokenType
+import com.tencent.bkrepo.common.api.constant.AUTH_HEADER_UID
 import com.tencent.bkrepo.common.api.constant.StringPool
 import com.tencent.bkrepo.common.api.constant.USER_KEY
 import com.tencent.bkrepo.common.api.exception.ErrorCodeException
@@ -44,9 +50,7 @@ import com.tencent.bkrepo.common.artifact.repository.context.ArtifactContextHold
 import com.tencent.bkrepo.common.artifact.repository.context.ArtifactDownloadContext
 import com.tencent.bkrepo.common.artifact.repository.context.ArtifactUploadContext
 import com.tencent.bkrepo.common.artifact.util.http.UrlFormatter
-import com.tencent.devops.plugin.api.PluginManager
-import com.tencent.devops.plugin.api.applyExtension
-import com.tencent.bkrepo.common.security.constant.AUTH_HEADER_UID
+import com.tencent.bkrepo.common.security.manager.PermissionManager
 import com.tencent.bkrepo.common.security.util.SecurityUtils
 import com.tencent.bkrepo.common.service.util.HttpContextHolder
 import com.tencent.bkrepo.generic.artifact.GenericArtifactInfo
@@ -57,10 +61,8 @@ import com.tencent.bkrepo.generic.pojo.TemporaryAccessToken
 import com.tencent.bkrepo.generic.pojo.TemporaryAccessUrl
 import com.tencent.bkrepo.generic.pojo.TemporaryUrlCreateRequest
 import com.tencent.bkrepo.repository.api.RepositoryClient
-import com.tencent.bkrepo.repository.api.TemporaryTokenClient
-import com.tencent.bkrepo.repository.pojo.token.TemporaryTokenCreateRequest
-import com.tencent.bkrepo.repository.pojo.token.TemporaryTokenInfo
-import com.tencent.bkrepo.repository.pojo.token.TokenType
+import com.tencent.devops.plugin.api.PluginManager
+import com.tencent.devops.plugin.api.applyExtension
 import org.springframework.stereotype.Service
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import java.time.LocalDateTime
@@ -71,11 +73,12 @@ import java.time.format.DateTimeFormatter
  */
 @Service
 class TemporaryAccessService(
-    private val temporaryTokenClient: TemporaryTokenClient,
+    private val temporaryTokenClient: ServiceTemporaryTokenClient,
     private val repositoryClient: RepositoryClient,
     private val genericProperties: GenericProperties,
     private val pluginManager: PluginManager,
-    private val deltaSyncService: DeltaSyncService
+    private val deltaSyncService: DeltaSyncService,
+    private val permissionManager: PermissionManager
 ) {
 
     /**
@@ -119,7 +122,7 @@ class TemporaryAccessService(
                 authorizedIpSet = authorizedIpSet,
                 expireSeconds = expireSeconds,
                 permits = permits,
-                type = type
+                type = type,
             )
             val urlList = temporaryTokenClient.createToken(temporaryTokenRequest).data.orEmpty().map {
                 TemporaryAccessUrl(
@@ -131,13 +134,13 @@ class TemporaryAccessService(
                     authorizedIpList = it.authorizedIpList,
                     expireDate = it.expireDate,
                     permits = it.permits,
-                    type = it.type.name
+                    type = it.type.name,
                 )
             }
             if (needsNotify) {
                 val context = TemporaryUrlNotifyContext(
                     userId = SecurityUtils.getUserId(),
-                    urlList = urlList
+                    urlList = urlList,
                 )
                 pluginManager.applyExtension<TemporaryUrlNotifyExtension> { notify(context) }
             }
@@ -161,7 +164,7 @@ class TemporaryAccessService(
                     authorizedIpList = it.authorizedIpList,
                     expireDate = it.expireDate,
                     permits = it.permits,
-                    type = it.type.name
+                    type = it.type.name,
                 )
             }
         }
@@ -191,7 +194,7 @@ class TemporaryAccessService(
     fun validateToken(
         token: String,
         artifactInfo: ArtifactInfo,
-        type: TokenType
+        type: TokenType,
     ): TemporaryTokenInfo {
         val temporaryToken = checkToken(token)
         checkExpireTime(temporaryToken.expireDate)
@@ -261,10 +264,10 @@ class TemporaryAccessService(
      */
     private fun checkToken(token: String): TemporaryTokenInfo {
         if (token.isBlank()) {
-            throw ErrorCodeException(ArtifactMessageCode.TEMPORARY_TOKEN_INVALID)
+            throw ErrorCodeException(ArtifactMessageCode.TEMPORARY_TOKEN_INVALID, token)
         }
         return temporaryTokenClient.getTokenInfo(token).data
-            ?: throw ErrorCodeException(ArtifactMessageCode.TEMPORARY_TOKEN_INVALID)
+            ?: throw ErrorCodeException(ArtifactMessageCode.TEMPORARY_TOKEN_INVALID, token)
     }
 
     /**
@@ -295,7 +298,7 @@ class TemporaryAccessService(
      */
     private fun checkAccessType(grantedType: TokenType, accessType: TokenType) {
         if (grantedType != TokenType.ALL && grantedType != accessType) {
-            throw ErrorCodeException(ArtifactMessageCode.TEMPORARY_TOKEN_INVALID)
+            throw ErrorCodeException(ArtifactMessageCode.TEMPORARY_TOKEN_INVALID, accessType)
         }
     }
 
@@ -305,12 +308,23 @@ class TemporaryAccessService(
     private fun checkAccessResource(tokenInfo: TemporaryTokenInfo, artifactInfo: ArtifactInfo) {
         // 校验项目/仓库
         if (tokenInfo.projectId != artifactInfo.projectId || tokenInfo.repoName != artifactInfo.repoName) {
-            throw ErrorCodeException(ArtifactMessageCode.TEMPORARY_TOKEN_INVALID)
+            throw ErrorCodeException(
+                ArtifactMessageCode.TEMPORARY_TOKEN_INVALID,
+                "${artifactInfo.projectId}/${artifactInfo.repoName}"
+            )
         }
         // 校验路径
         if (!PathUtils.isSubPath(artifactInfo.getArtifactFullPath(), tokenInfo.fullPath)) {
-            throw ErrorCodeException(ArtifactMessageCode.TEMPORARY_TOKEN_INVALID)
+            throw ErrorCodeException(ArtifactMessageCode.TEMPORARY_TOKEN_INVALID, artifactInfo.getArtifactFullPath())
         }
+        // 校验创建人权限
+        permissionManager.checkNodePermission(
+            if (tokenInfo.type == TokenType.DOWNLOAD) PermissionAction.READ else PermissionAction.WRITE,
+            artifactInfo.projectId,
+            artifactInfo.repoName,
+            artifactInfo.getArtifactFullPath(),
+            userId = tokenInfo.createdBy,
+        )
     }
 
     /**
@@ -322,18 +336,20 @@ class TemporaryAccessService(
         val authenticatedUid = SecurityUtils.getUserId()
         // 使用认证uid校验授权
         if (tokenInfo.authorizedUserList.isNotEmpty() && authenticatedUid !in tokenInfo.authorizedUserList) {
-            throw ErrorCodeException(ArtifactMessageCode.TEMPORARY_TOKEN_INVALID)
+            throw ErrorCodeException(ArtifactMessageCode.TEMPORARY_TOKEN_INVALID, authenticatedUid)
         }
         // 获取需要审计的uid
         val auditedUid = if (SecurityUtils.isAnonymous()) {
             HttpContextHolder.getRequest().getHeader(AUTH_HEADER_UID) ?: tokenInfo.createdBy
-        } else authenticatedUid
+        } else {
+            authenticatedUid
+        }
         // 设置审计uid到session中
         HttpContextHolder.getRequestOrNull()?.setAttribute(USER_KEY, auditedUid)
         // 校验ip授权
         val clientIp = HttpContextHolder.getClientAddress()
         if (tokenInfo.authorizedIpList.isNotEmpty() && clientIp !in tokenInfo.authorizedIpList) {
-            throw ErrorCodeException(ArtifactMessageCode.TEMPORARY_TOKEN_INVALID)
+            throw ErrorCodeException(ArtifactMessageCode.TEMPORARY_TOKEN_INVALID, clientIp)
         }
     }
 

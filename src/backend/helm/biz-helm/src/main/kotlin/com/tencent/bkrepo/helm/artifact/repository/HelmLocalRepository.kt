@@ -48,6 +48,7 @@ import com.tencent.bkrepo.helm.constants.CHART
 import com.tencent.bkrepo.helm.constants.FILE_TYPE
 import com.tencent.bkrepo.helm.constants.FORCE
 import com.tencent.bkrepo.helm.constants.FULL_PATH
+import com.tencent.bkrepo.helm.constants.HelmMessageCode
 import com.tencent.bkrepo.helm.constants.META_DETAIL
 import com.tencent.bkrepo.helm.constants.NAME
 import com.tencent.bkrepo.helm.constants.OVERWRITE
@@ -99,7 +100,10 @@ class HelmLocalRepository(
                         putAttribute(NAME, chartMetadata.name)
                         putAttribute(VERSION, chartMetadata.version)
                     } catch (e: Exception) {
-                        throw HelmBadRequestException("The chart is broken.....")
+                        throw HelmBadRequestException(
+                            HelmMessageCode.HELM_CHART_BROKEN,
+                            emptyList<String>()
+                            )
                     }
                 }
                 PROV -> {
@@ -119,7 +123,7 @@ class HelmLocalRepository(
             val isOverwrite = isOverwrite(fullPath, isForce)
             putAttribute(OVERWRITE, isOverwrite)
             if (isExist && !isOverwrite) {
-                throw HelmFileAlreadyExistsException("${fullPath.trimStart('/')} already exists")
+                throw HelmFileAlreadyExistsException(HelmMessageCode.HELM_FILE_ALREADY_EXISTS, fullPath.trimStart('/'))
             }
         }
     }
@@ -169,7 +173,8 @@ class HelmLocalRepository(
 
     override fun onDownload(context: ArtifactDownloadContext): ArtifactResource? {
         val fullPath = context.getStringAttribute(FULL_PATH)!!
-        val node = ArtifactContextHolder.getNodeDetail(fullPath = fullPath)
+        context.artifactInfo.setArtifactMappingUri(fullPath)
+        val node = ArtifactContextHolder.getNodeDetail(context.artifactInfo)
         node?.let {
             node.metadata[NAME]?.let { context.putAttribute(NAME, it) }
             node.metadata[VERSION]?.let { context.putAttribute(VERSION, it) }
@@ -198,7 +203,10 @@ class HelmLocalRepository(
 
     override fun query(context: ArtifactQueryContext): ArtifactInputStream? {
         val fullPath = context.getStringAttribute(FULL_PATH)!!
-        return this.onQuery(context) ?: throw HelmFileNotFoundException("Artifact[$fullPath] does not exist")
+        return this.onQuery(context) ?:
+        throw HelmFileNotFoundException(
+            HelmMessageCode.HELM_FILE_NOT_FOUND, fullPath, "${context.projectId}|${context.repoName}"
+        )
     }
 
     private fun onQuery(context: ArtifactQueryContext): ArtifactInputStream? {

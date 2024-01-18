@@ -1,30 +1,30 @@
 <template>
     <div class="project-detail-container">
         <bk-tab class="project-detail-tab page-tab" type="unborder-card" :active.sync="tabName">
-            <bk-tab-panel name="basic" label="基础信息">
+            <bk-tab-panel name="basic" :label="$t('baseInfo')">
                 <bk-form class="ml10 mr10" :label-width="75">
-                    <bk-form-item label="项目标识">
+                    <bk-form-item :label="$t('projectId')">
                         <span>{{ currentProject.id }}</span>
                     </bk-form-item>
-                    <bk-form-item label="项目名称">
+                    <bk-form-item :label="$t('projectName')">
                         <span>{{ currentProject.name }}</span>
                     </bk-form-item>
-                    <bk-form-item label="项目描述">
+                    <bk-form-item :label="$t('projectDescription')">
                         <span>{{ currentProject.description }}</span>
                     </bk-form-item>
                     <bk-form-item>
-                        <bk-button theme="primary" @click="showProjectDialog">修改</bk-button>
+                        <bk-button theme="primary" @click="showProjectDialog">{{ $t('edit') }}</bk-button>
                     </bk-form-item>
                 </bk-form>
             </bk-tab-panel>
             <!-- <bk-tab-panel v-for="tab in [manage, user, role]" :key="tab.name" :name="tab.name" :label="tab.name"> -->
-            <bk-tab-panel v-for="tab in [manage]" :key="tab.name" :name="tab.name" :label="tab.name">
+            <bk-tab-panel v-for="tab in [manage, user]" :key="tab.name" :name="tab.name" :label="tab.name">
                 <div class="flex-align-center">
                     <bk-select class="w250 select-user"
                         v-model="tab.add"
                         multiple
                         searchable
-                        placeholder="请选择用户"
+                        :placeholder="$t('selectUserMsg')"
                         :enable-virtual-scroll="selectList(tab).length > 3000"
                         :list="selectList(tab)">
                         <bk-option v-for="option in selectList(tab)"
@@ -34,7 +34,8 @@
                         </bk-option>
                     </bk-select>
                     <bk-button :disabled="!tab.add.length" icon="plus" theme="primary" class="ml10" @click="confirmHandler(tab, 'add')">{{ $t('add') }}</bk-button>
-                    <bk-button :disabled="!tab.delete.length" theme="default" class="ml10" @click="confirmHandler(tab, 'delete')">批量移除</bk-button>
+                    <bk-button :disabled="!tab.delete.length" theme="default" class="ml10" @click="confirmHandler(tab, 'delete')">
+                        {{ $t('batchRemove')}}</bk-button>
                 </div>
                 <bk-table
                     class="mt10"
@@ -51,7 +52,7 @@
                     }">
                     <template #empty><empty-data style="margin-top:100px;"></empty-data></template>
                     <bk-table-column type="selection" width="60"></bk-table-column>
-                    <bk-table-column :label="tab.name"><template #default="{ row }">
+                    <bk-table-column :label="tab.name" width="1600"><template #default="{ row }">
                         {{ (userList[row] && userList[row].name) || (roleList[row] && roleList[row].name) || row }}
                     </template></bk-table-column>
                 </bk-table>
@@ -72,7 +73,7 @@
                 manage: {
                     id: 'manage',
                     loading: false,
-                    name: '项目管理员',
+                    name: this.$t('projectManager'),
                     type: 'user',
                     items: [],
                     add: [],
@@ -81,7 +82,7 @@
                 user: {
                     id: 'user',
                     loading: false,
-                    name: '项目用户',
+                    name: this.$t('projectUser'),
                     type: 'user',
                     items: [],
                     add: [],
@@ -90,13 +91,15 @@
                 role: {
                     id: 'role',
                     loading: false,
-                    name: '项目用户组',
+                    name: this.$t('projectUserGroup'),
                     type: 'role',
                     items: [],
                     add: [],
                     delete: []
                 },
-                roleList: {}
+                roleList: {},
+                admins: [],
+                users: []
             }
         },
         computed: {
@@ -116,9 +119,9 @@
         beforeRouteEnter (to, from, next) {
             const breadcrumb = to.meta.breadcrumb
             if (to.query.projectId) {
-                breadcrumb.splice(0, breadcrumb.length, { name: 'projectManage', label: to.query.projectId }, { name: 'projectConfig', label: '项目设置' })
+                breadcrumb.splice(0, breadcrumb.length, { name: 'projectManage', label: to.query.projectId }, { name: 'projectConfig', label: 'projectConfig' })
             } else {
-                breadcrumb.splice(0, breadcrumb.length, { name: 'projectConfig', label: '项目设置' })
+                breadcrumb.splice(0, breadcrumb.length, { name: 'projectConfig', label: 'projectConfig' })
             }
             next()
         },
@@ -142,6 +145,8 @@
                 this.getProjectPermission({ projectId: this.currentProject.id }).then(data => {
                     const manage = data.find(p => p.permName === 'project_manage_permission') || {}
                     const view = data.find(p => p.permName === 'project_view_permission') || {}
+                    this.admins = manage.users
+                    this.users = view.users
                     this.manage = {
                         ...this.manage,
                         id: manage.id,
@@ -160,9 +165,22 @@
                 })
             },
             selectList (tab) {
-                return Object.values(tab.type === 'role' ? this.roleList : this.userList)
-                    .filter(v => v.id !== 'anonymous')
-                    .filter(v => !~tab.items.findIndex(w => w === v.id))
+                const usersWithoutAnonymous = Object.values(this.userList).filter(v => v.id !== 'anonymous')
+                let final = usersWithoutAnonymous
+                if ((tab.items instanceof Array) && tab.items.length !== 0) {
+                    final = usersWithoutAnonymous.filter(v => !~tab.items.findIndex(w => w === v.id))
+                }
+                if (tab.name === this.$t('projectUser')) {
+                    if (this.admins.length !== 0 && final.length !== 0) {
+                        final = final.filter(v => !~this.admins.findIndex(w => w === v.id))
+                    }
+                }
+                if (tab.name === this.$t('projectManager')) {
+                    if (this.users.length !== 0 && final.length !== 0) {
+                        final = final.filter(v => !~this.users.findIndex(w => w === v.id))
+                    }
+                }
+                return final
             },
             confirmHandler (tab, type) {
                 if (tab.loading || !tab[type].length) return
@@ -197,7 +215,7 @@
                     ? confirmFn()
                     : this.$confirm({
                         theme: 'danger',
-                        message: `确认移除 ${deleteName} ?`,
+                        message: this.$t('removeConfirm') + `${deleteName} ?`,
                         confirmFn
                     })
             },

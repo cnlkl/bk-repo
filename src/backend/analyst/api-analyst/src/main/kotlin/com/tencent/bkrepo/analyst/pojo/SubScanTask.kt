@@ -29,7 +29,7 @@ package com.tencent.bkrepo.analyst.pojo
 
 import com.tencent.bkrepo.analyst.pojo.TaskMetadata.Companion.TASK_METADATA_FILE_NAME
 import com.tencent.bkrepo.common.analysis.pojo.scanner.Scanner
-import java.io.File
+import com.tencent.bkrepo.common.api.constant.StringPool
 
 /**
  * 提交给扫描执行服务的子扫描任务
@@ -60,6 +60,14 @@ data class SubScanTask(
      */
     val repoType: String,
     /**
+     * 包名
+     */
+    val packageKey: String? = null,
+    /**
+     * 包版本
+     */
+    val version: String? = null,
+    /**
      * 文件完整路径
      */
     val fullPath: String,
@@ -80,6 +88,10 @@ data class SubScanTask(
      */
     val credentialsKey: String?,
     /**
+     * 创建任务的用户
+     */
+    val createdBy: String,
+    /**
      * 文件下载链接，容器化扫描时使用
      */
     val url: String? = null,
@@ -90,7 +102,12 @@ data class SubScanTask(
     /**
      * 扫描执行器需要的额外信息，用于扩展
      */
-    val extra: Map<String, Any>? = null
+    val extra: Map<String, Any>? = null,
 ) {
-    fun fileName() = extra?.get(TASK_METADATA_FILE_NAME)?.toString() ?: fullPath.substringAfterLast(File.separatorChar)
+    fun fileName() = extra?.get(TASK_METADATA_FILE_NAME)?.toString() ?: fullPath.substringAfterLast(StringPool.SLASH)
+
+    /**
+     * 拼接任务ID字符串用于日志输出，方便排查问题时通过日志追踪任务
+     */
+    fun trace() = "subtask[$taskId], parent[$parentScanTaskId]"
 }

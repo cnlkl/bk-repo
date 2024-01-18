@@ -1,6 +1,6 @@
 <template>
     <div class="repo-token-container" v-bkloading="{ isLoading }">
-        <bk-button class="ml20 mt10" icon="plus" theme="primary" @click="createToken">{{ $t('create') }}</bk-button>
+        <bk-button class="ml20 mt10" icon="plus" theme="primary" @click="createToken">{{ $t('newToken') }}</bk-button>
         <bk-table
             class="mt10"
             :data="tokenList"
@@ -15,7 +15,7 @@
             <bk-table-column :label="$t('createdDate')">
                 <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
             </bk-table-column>
-            <bk-table-column :label="$t('expiress')">
+            <bk-table-column :label="$t('expire')">
                 <template #default="{ row }">{{ transformFormatDate(row.expiredAt) }}</template>
             </bk-table-column>
             <bk-table-column :label="$t('operation')" width="100">
@@ -93,6 +93,7 @@
                 })
             },
             createToken () {
+                this.$refs.createToken.userName = this.userInfo.username
                 this.$refs.createToken.showDialogHandler()
             }
         }

@@ -32,6 +32,7 @@
 package com.tencent.bkrepo.auth.service.local
 
 import com.mongodb.BasicDBObject
+import com.tencent.bkrepo.auth.constant.PROJECT_VIEWER_ID
 import com.tencent.bkrepo.auth.message.AuthMessageCode
 import com.tencent.bkrepo.auth.model.TPermission
 import com.tencent.bkrepo.auth.model.TRole
@@ -79,7 +80,7 @@ open class AbstractServiceImpl constructor(
         return true
     }
 
-    // check user is exist
+    // check user is existed
     private fun checkUserExistBatch(idList: List<String>) {
         idList.forEach {
             userRepository.findFirstByUserId(it) ?: run {
@@ -89,7 +90,7 @@ open class AbstractServiceImpl constructor(
         }
     }
 
-    // check role is exist
+    // check role is existed
     fun checkRoleExist(roleId: String) {
         val role = roleRepository.findTRoleById(ObjectId(roleId))
         role ?: run {
@@ -103,6 +104,17 @@ open class AbstractServiceImpl constructor(
             return false
         }
         return user.admin
+    }
+
+    fun isUserLocalProjectAdmin(userId: String, projectId: String): Boolean {
+        val roleIdArray = mutableListOf<String>()
+        roleRepository.findByTypeAndProjectIdAndAdmin(RoleType.PROJECT, projectId, true).forEach {
+            roleIdArray.add(it.id!!)
+        }
+        userRepository.findFirstByUserIdAndRolesIn(userId, roleIdArray) ?: run {
+            return false
+        }
+        return true
     }
 
     fun updatePermissionById(id: String, key: String, value: Any): Boolean {
@@ -161,6 +173,14 @@ open class AbstractServiceImpl constructor(
         roleRepository.findByTypeAndProjectIdAndAdmin(RoleType.PROJECT, projectId, true).forEach {
             roleIdArray.add(it.id!!)
         }
+        return userRepository.findAllByRolesIn(roleIdArray).map { it.userId }.distinct()
+    }
+
+    // 获取此项目一般用户
+    fun getProjectCommonUser(projectId: String): List<String> {
+        val roleIdArray = mutableListOf<String>()
+        val role = roleRepository.findFirstByRoleIdAndProjectId(PROJECT_VIEWER_ID, projectId)
+        if (role != null) role.id?.let { roleIdArray.add(it) }
         return userRepository.findAllByRolesIn(roleIdArray).map { it.userId }.distinct()
     }
 

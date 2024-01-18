@@ -33,6 +33,7 @@ package com.tencent.bkrepo.helm.service.impl
 
 import com.tencent.bkrepo.auth.pojo.enums.PermissionAction
 import com.tencent.bkrepo.auth.pojo.enums.ResourceType
+import com.tencent.bkrepo.common.artifact.exception.PackageNotFoundException
 import com.tencent.bkrepo.common.artifact.util.PackageKeys
 import com.tencent.bkrepo.common.artifact.util.http.UrlFormatter
 import com.tencent.bkrepo.common.query.model.PageLimit
@@ -42,6 +43,7 @@ import com.tencent.bkrepo.common.query.model.Sort
 import com.tencent.bkrepo.common.security.permission.Permission
 import com.tencent.bkrepo.common.service.util.HttpContextHolder
 import com.tencent.bkrepo.helm.config.HelmProperties
+import com.tencent.bkrepo.helm.constants.HelmMessageCode
 import com.tencent.bkrepo.helm.constants.NAME
 import com.tencent.bkrepo.helm.constants.NODE_FULL_PATH
 import com.tencent.bkrepo.helm.constants.NODE_METADATA
@@ -120,7 +122,7 @@ class ChartInfoServiceImpl(
                     select = mutableListOf(PROJECT_ID, REPO_NAME, NODE_FULL_PATH, NODE_METADATA),
                     rule = rule
                 )
-                val nodeList: List<Map<String, Any?>>? = nodeClient.search(queryModel).data?.records
+                val nodeList: List<Map<String, Any?>>? = nodeClient.queryWithoutCount(queryModel).data?.records
                 if (nodeList.isNullOrEmpty()) HttpStatus.NOT_FOUND else HttpStatus.OK
             } else {
                 HttpStatus.NOT_FOUND
@@ -140,11 +142,11 @@ class ChartInfoServiceImpl(
             val fullPath = String.format("/%s-%s.tgz", name, version)
             val nodeDetail = nodeClient.getNodeDetail(projectId, repoName, fullPath).data ?: run {
                 logger.warn("node [$fullPath] don't found.")
-                throw HelmFileNotFoundException("node [$fullPath] don't found.")
+                throw HelmFileNotFoundException(HelmMessageCode.HELM_FILE_NOT_FOUND, fullPath, "$projectId|$repoName")
             }
             val packageVersion = packageClient.findVersionByName(projectId, repoName, packageKey, version).data ?: run {
                 logger.warn("packageKey [$packageKey] don't found.")
-                throw HelmFileNotFoundException("packageKey [$packageKey] don't found.")
+                throw PackageNotFoundException(packageKey)
             }
             val basicInfo = ObjectBuilderUtil.buildBasicInfo(nodeDetail, packageVersion)
             return PackageVersionInfo(basicInfo, packageVersion.packageMetadata)

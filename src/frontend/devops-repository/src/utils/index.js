@@ -1,11 +1,16 @@
+import createLocale from '@locale'
 /**
  *  转换文件大小
  */
 export function convertFileSize (size, unit = 'B') {
-    const arr = ['B', 'KB', 'MB', 'GB', 'TB']
+    const arr = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
     const index = arr.findIndex(v => v === unit)
     if (size > 1024) {
-        return convertFileSize(size / 1024, arr[index + 1])
+        if (arr[index + 1]) {
+            return convertFileSize(size / 1024, arr[index + 1])
+        } else {
+            return `${index ? size.toFixed(2) : size}${unit}`
+        }
     } else {
         return `${index ? size.toFixed(2) : size}${unit}`
     }
@@ -73,11 +78,14 @@ export function formatDate (ms) {
         prezero(time.getSeconds())}`
 }
 
+// 加载先于main.js,初次渲染Vue.prototype.$ajax.defaults为空，二次渲染于main.js，此时Vue.prototype.$ajax.defaults不为空，此时添加报文头
+const { i18n } = createLocale(require.context('@locale/repository/', false, /\.json$/))
+
 const durationMap = {
-    s: { label: '秒', deno: 60, next: 'm' },
-    m: { label: '分', deno: 60, next: 'h' },
-    h: { label: '时', deno: 24, next: 'd' },
-    d: { label: '天', deno: 365 }
+    s: { label: i18n.t('cron.second'), deno: 60, next: 'm' },
+    m: { label: i18n.t('cron.minute'), deno: 60, next: 'h' },
+    h: { label: i18n.t('cron.hour'), deno: 24, next: 'd' },
+    d: { label: i18n.t('cron.day'), deno: 365 }
 }
 export function formatDuration (duration, unit = 's', target = []) {
     if (!duration) return duration || '/'
@@ -86,7 +94,7 @@ export function formatDuration (duration, unit = 's', target = []) {
     const current = duration % deno ? `${duration % deno}${label}` : ''
     duration = Math.floor(duration / deno)
     if (!duration) {
-        return [current, ...target].slice(0, 2).join('') || '小于1秒'
+        return [current, ...target].slice(0, 2).join('') || i18n.t('lessOneSecondTip')
     }
     return formatDuration(duration, next, [current, ...target])
 }

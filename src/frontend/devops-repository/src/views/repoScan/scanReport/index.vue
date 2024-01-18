@@ -1,29 +1,30 @@
 <template>
     <div class="scan-report-container">
         <report-overview
+            v-if="scanPlan.id"
             :scan-plan="scanPlan"
             class="mb10"
             @refreshData="refreshData"
             @refresh="refreshList">
         </report-overview>
         <div class="report-list-header flex-between-center">
-            <span class="report-title flex-align-center">扫描记录</span>
+            <span class="report-title flex-align-center">{{ $t('scanHistory') }}</span>
             <div class="flex-align-center">
                 <operation-list class="mr10"
                     :list="Object.keys(viewEnum).map(type => ({ clickEvent: () => viewType = type, label: viewEnum[type] }))">
                     <bk-button theme="default">{{ viewEnum[viewType] }}</bk-button>
                 </operation-list>
-                <bk-button class="ml10" :theme="isfiltering ? 'primary' : 'default'" @click="showFilterForm">筛选</bk-button>
+                <bk-button class="ml10" :theme="isfiltering ? 'primary' : 'default'" @click="showFilterForm">{{ $t('filter') }}</bk-button>
             </div>
-            <filter-sideslider ref="filterSideslider" :scan-type="scanPlan.type" @filter="filterHandler"></filter-sideslider>
+            <filter-sideslider v-if="scanPlan.id" ref="filterSideslider" :scan-type="scanPlan.type" @filter="filterHandler"></filter-sideslider>
         </div>
         <div class="report-list flex-align-center" v-bkloading="{ isLoading }">
             <div class="mr20 view-task" v-show="viewType === 'TASKVIEW'">
-                <div class="task-header flex-align-center">任务列表</div>
+                <div class="task-header flex-align-center">{{ $t('taskList') }}</div>
                 <div class="p20">
                     <bk-input
                         v-model.trim="taskNameSearch"
-                        placeholder="请输入关键字，按Enter键搜索"
+                        :placeholder="$t('keySearchPlaceHolder')"
                         clearable
                         right-icon="bk-icon icon-search"
                         @enter="handlerTaskPaginationChange()"
@@ -49,7 +50,7 @@
                                     class="stop-task flex-align-center"
                                     @click.stop="stopTask(task)">
                                     <Icon class="mr5" name="icon-plus-stop" size="12" />
-                                    <span>中止</span>
+                                    <span>{{ $t('suspend') }}</span>
                                 </span>
                             </div>
                         </div>
@@ -58,11 +59,11 @@
             </div>
             <div class="flex-1">
                 <div v-show="viewType === 'TASKVIEW'" class="mb20 task-overview flex-center">
-                    <div class="overview-key">开始时间</div>
+                    <div class="overview-key">{{ $t('startTime') }}</div>
                     <div class="overview-value">{{ formatDate(taskSelected.startDateTime) }}</div>
-                    <div class="overview-key">结束时间</div>
+                    <div class="overview-key">{{ $t('endTime') }}</div>
                     <div class="overview-value">{{ formatDate(taskSelected.finishedDateTime) }}</div>
-                    <div class="overview-key">扫描制品数</div>
+                    <div class="overview-key">{{ $t('scanArtifactNum') }}</div>
                     <div class="overview-value">{{ taskSelected.total }}</div>
                 </div>
                 <bk-table
@@ -75,16 +76,16 @@
                     <template #empty>
                         <empty-data :is-loading="isLoading"></empty-data>
                     </template>
-                    <bk-table-column label="制品名称" show-overflow-tooltip>
+                    <bk-table-column :label="$t('artifactName')" show-overflow-tooltip>
                         <template #default="{ row }">
                             <span v-if="row.groupId" class="mr5 repo-tag" :data-name="row.groupId"></span>
-                            <span class="hover-btn" :class="{ 'disabled': row.status !== 'SUCCESS' }" @click="showArtiReport(row)">{{ row.name }}</span>
+                            <span class="hover-btn" :class="{ 'disabled': !['UN_QUALITY', 'QUALITY_PASS', 'QUALITY_UNPASS'].includes(row.status) }" @click="showArtiReport(row)">{{ row.name }}</span>
                         </template>
                     </bk-table-column>
-                    <bk-table-column label="制品版本/存储路径" show-overflow-tooltip>
+                    <bk-table-column :label="$t('artifactVersion') + '/' + $t('storagePath')" show-overflow-tooltip>
                         <template #default="{ row }">{{ row.version || row.fullPath }}</template>
                     </bk-table-column>
-                    <bk-table-column label="所属仓库" show-overflow-tooltip>
+                    <bk-table-column :label="$t('repo')" show-overflow-tooltip>
                         <template #default="{ row }">
                             <Icon class="table-svg" size="16" :name="row.repoType.toLowerCase()" />
                             <span class="ml5">{{replaceRepoName(row.repoName)}}</span>
@@ -97,31 +98,31 @@
                             <span v-else>/</span>
                         </template>
                     </bk-table-column> -->
-                    <bk-table-column v-if="scanPlan.scanTypes.includes(SCAN_TYPE_SECURITY)" label="风险等级">
+                    <bk-table-column v-if="scanPlan.scanTypes.includes(SCAN_TYPE_SECURITY)" :label="$t('riskLevel')">
                         <template #default="{ row }">
                             <div v-if="row.highestLeakLevel" class="status-sign" :class="row.highestLeakLevel"
-                                :data-name="leakLevelEnum[row.highestLeakLevel]">
+                                :data-name="$t(`leakLevelEnum.${row.highestLeakLevel}`)">
                             </div>
                             <span v-else>/</span>
                         </template>
                     </bk-table-column>
-                    <bk-table-column label="扫描状态">
+                    <bk-table-column :label="$t('scanStatus')">
                         <template #default="{ row }">
-                            <span class="repo-tag" :class="row.status">{{scanStatusEnum[row.status]}}</span>
+                            <span class="repo-tag" :class="row.status">{{$t(`scanStatusEnum.${row.status}`)}}</span>
                         </template>
                     </bk-table-column>
-                    <bk-table-column label="扫描完成时间" width="150">
+                    <bk-table-column :label="$t('scanCompletionTime')" width="150">
                         <template #default="{ row }">{{formatDate(row.finishTime)}}</template>
                     </bk-table-column>
-                    <bk-table-column :label="$t('operation')" width="70">
+                    <bk-table-column :label="$t('operation')" width="100">
                         <template #default="{ row }">
                             <operation-list
                                 :list="[
-                                    viewType === 'OVERVIEW' && { label: '中止', clickEvent: () => stopScanHandler(row), disabled: row.status !== 'INIT' && row.status !== 'RUNNING' },
+                                    viewType === 'OVERVIEW' && { label: $t('suspend'), clickEvent: () => stopScanHandler(row), disabled: row.status !== 'INIT' && row.status !== 'RUNNING' },
                                     viewType === 'OVERVIEW' && !scanPlan.readOnly && {
-                                        label: '重新扫描',
+                                        label: $t('rescan'),
                                         clickEvent: () => startScanSingleHandler(row),
-                                        disabled: row.status !== 'SUCCESS' && row.status !== 'STOP' && row.status !== 'FAILED'
+                                        disabled: !['UN_QUALITY', 'QUALITY_PASS', 'QUALITY_UNPASS', 'STOP', 'FAILED'].includes(row.status)
                                     }
                                 ]"></operation-list>
                         </template>
@@ -149,9 +150,15 @@
     import reportOverview from './overview'
     import filterSideslider from './filterSideslider'
     import { mapActions } from 'vuex'
-    import { formatDate } from '@repository/utils'
+    import { formatDate, debounce } from '@repository/utils'
     import { scanStatusEnum, leakLevelEnum } from '@repository/store/publicEnum'
     import { SCAN_TYPE_SECURITY } from '../../../store/publicEnum'
+    const filterParams = {
+        name: '',
+        repoName: '',
+        highestLeakLevel: '',
+        status: ''
+    }
     export default {
         name: 'scanReport',
         components: {
@@ -171,8 +178,8 @@
                 formatISO: {},
                 filter: {},
                 viewEnum: {
-                    OVERVIEW: '总览视图',
-                    TASKVIEW: '任务视图'
+                    OVERVIEW: this.$t('overview'),
+                    TASKVIEW: this.$t('taskView')
                 },
                 viewType: this.$route.query.viewType || 'OVERVIEW',
                 taskLoading: false,
@@ -192,7 +199,10 @@
                     current: 1,
                     limit: 20,
                     limitList: [10, 20, 40]
-                }
+                },
+                debounceGetReportListHandler: null,
+                dependentCurrent: parseInt(this.$route.query.rc || 1),
+                dependentLimit: parseInt(this.$route.query.rl || 20)
             }
         },
         computed: {
@@ -208,13 +218,15 @@
         },
         watch: {
             viewType (val) {
-                this.handlerPaginationChange()
-                if (val === 'TASKVIEW') this.handlerTaskPaginationChange()
+                this.$route.query.viewType = val
+                this.handlerViewPagination(val)
             }
         },
         created () {
+            // 添加防抖，否则会导致请求次数过多
+            this.debounceGetReportListHandler = debounce(this.getReportListHandler, 100)
             this.refreshScanPlan(this.projectId, this.planId)
-            this.handlerTaskPaginationChange()
+            this.handlerViewPagination(this.viewType)
         },
         methods: {
             formatDate,
@@ -227,11 +239,38 @@
                 'stopScan',
                 'getScanConfig'
             ]),
+            handlerViewPagination (val) {
+                if (val === 'OVERVIEW') {
+                    this.handlerPaginationChange({ current: this.dependentCurrent, limit: this.dependentLimit })
+                } else {
+                    // 因为任务视图下的任务列表是滚动加载的，所以没必要精确定位到具体是哪个任务，自然也就不用保留扫描记录列表页的页码及每页大小了
+                    this.handlerTaskPaginationChange()
+                }
+            },
             refreshData (key, value) {
                 this[key] = value
+                // 当设置时间之后，需要将设置的时间更新到VueRouter的query中，即浏览器的url中
+                this.$router.replace({
+                    query: {
+                        ...this.$route.query,
+                        startTime: this.formatISO?.startTime || '',
+                        endTime: this.formatISO?.endTime || ''
+                    }
+                })
             },
             refreshList (force) {
-                force ? this.handlerPaginationChange() : this.getReportListHandler()
+                if (force.forceFlag) {
+                    const initFlag = force.initFlag
+                    delete force.initFlag
+                    // 此时表明是点击面包屑返回或者当前url中携带了相关参数，此时需要根据url中的页码参数筛选
+                    if (initFlag === 'initFlag') {
+                        this.handlerPaginationChange({ current: this.dependentCurrent, limit: this.dependentLimit })
+                    } else {
+                        this.handlerPaginationChange()
+                    }
+                } else {
+                    this.getReportListHandler()
+                }
             },
             refreshScanPlan (projectId, planId) {
                 this.getScanConfig({ projectId: projectId, id: planId }).then(res => {
@@ -241,7 +280,14 @@
             handlerPaginationChange ({ current = 1, limit = this.pagination.limit } = {}) {
                 this.pagination.current = current
                 this.pagination.limit = limit
-                this.getReportListHandler()
+                this.$router.replace({
+                    query: {
+                        ...this.$route.query,
+                        rc: this.pagination.current,
+                        rl: this.pagination.limit
+                    }
+                })
+                this.debounceGetReportListHandler ? this.debounceGetReportListHandler() : this.getReportListHandler()
             },
             getReportListHandler () {
                 this.isLoading = true
@@ -268,7 +314,22 @@
             },
             filterHandler (filter) {
                 this.filter = filter
-                this.handlerPaginationChange()
+                const flag = filter.flag
+                // 此时不需要将这个子组件告知父组件是够是第一次筛选的状态同步到浏览器的url
+                delete filter.flag
+                this.$router.replace({
+                    query: {
+                        ...this.$route.query,
+                        ...filterParams,
+                        ...this.filter
+                    }
+                })
+                if (flag === 'initFlag') {
+                    // 如果是子组件告知的是第一次筛选，需要保留列表的页码等参数
+                    this.handlerPaginationChange({ current: this.dependentCurrent, limit: this.dependentLimit })
+                } else {
+                    this.handlerPaginationChange()
+                }
             },
             stopScanHandler ({ recordId }) {
                 this.stopScan({
@@ -277,13 +338,13 @@
                 }).then(() => {
                     this.$bkMessage({
                         theme: 'success',
-                        message: '中止扫描成功'
+                        message: this.$t('stopScanSuccessMsg')
                     })
                     this.getReportListHandler()
                 })
             },
             showArtiReport ({ recordId, name, status }) {
-                if (status !== 'SUCCESS') return
+                if (!['UN_QUALITY', 'QUALITY_PASS', 'QUALITY_UNPASS'].includes(status)) return
                 this.$router.push({
                     name: 'artiReport',
                     params: {
@@ -311,7 +372,7 @@
                 }).then(() => {
                     this.$bkMessage({
                         theme: 'success',
-                        message: '已添加到扫描队列'
+                        message: this.$t('scanArtMsg')
                     })
                     this.handlerPaginationChange()
                 })
@@ -330,8 +391,8 @@
                     projectId: this.projectId,
                     triggerType: this.scanPlan.readOnly ? 'PIPELINE' : 'MANUAL',
                     namePrefix: this.taskNameSearch || undefined,
-                    current: this.pagination.current,
-                    limit: this.pagination.limit
+                    current: this.taskPagination.current,
+                    limit: this.taskPagination.limit
                 }).then(({ records, totalRecords }) => {
                     load ? this.taskList.push(...records) : (this.taskList = records)
                     this.taskPagination.count = totalRecords
@@ -350,7 +411,7 @@
             stopTask (task) {
                 this.$confirm({
                     theme: 'danger',
-                    message: `确认中止扫描任务 ${task.name} ?`,
+                    message: this.$t('confirmStopScanMsg') + `${task.name} ?`,
                     confirmFn: () => {
                         return this.stopScanTask({
                             projectId: this.projectId,
@@ -358,7 +419,7 @@
                         }).then(() => {
                             this.$bkMessage({
                                 theme: 'success',
-                                message: '中止任务' + this.$t('success')
+                                message: this.$t('abortTask') + this.$t('success')
                             })
                             this.$set(task, 'status', 'STOPPED')
                             this.handlerPaginationChange()
@@ -450,7 +511,7 @@
                 border-right: 0 none;
             }
             .overview-key {
-                width: 80px;
+                width: auto;
                 color: var(--fontSubsidiaryColor);
                 background-color: var(--bgColor);
             }

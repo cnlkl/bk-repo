@@ -2,18 +2,19 @@ package com.tencent.bkrepo.replication.replica.base.interceptor
 
 import com.google.common.hash.Hashing
 import com.tencent.bkrepo.common.api.constant.StringPool
-import com.tencent.bkrepo.common.security.util.HttpSigner
-import com.tencent.bkrepo.common.security.util.HttpSigner.ACCESS_KEY
-import com.tencent.bkrepo.common.security.util.HttpSigner.APP_ID
-import com.tencent.bkrepo.common.security.util.HttpSigner.SIGN
-import com.tencent.bkrepo.common.security.util.HttpSigner.SIGN_TIME
-import com.tencent.bkrepo.common.security.util.HttpSigner.TIME_SPLIT
 import com.tencent.bkrepo.common.service.cluster.ClusterInfo
+import com.tencent.bkrepo.common.service.util.HttpSigner
+import com.tencent.bkrepo.common.service.util.HttpSigner.ACCESS_KEY
+import com.tencent.bkrepo.common.service.util.HttpSigner.APP_ID
+import com.tencent.bkrepo.common.service.util.HttpSigner.SIGN
+import com.tencent.bkrepo.common.service.util.HttpSigner.SIGN_TIME
+import com.tencent.bkrepo.common.service.util.HttpSigner.TIME_SPLIT
 import okhttp3.Interceptor
 import okhttp3.MultipartBody
 import okhttp3.Response
 import okio.Buffer
 import org.apache.commons.codec.digest.HmacAlgorithms
+import org.springframework.http.MediaType
 
 /**
  * 签名拦截器
@@ -30,7 +31,8 @@ class SignInterceptor(private val clusterInfo: ClusterInfo) : Interceptor {
             * 文件请求使用multipart/form-data，为避免读取文件，这里使用空串。表单参数应该包含文件的sha256。
             * 通过对表单参数的签名，来实现对文件请求的签名。
             * */
-            val bodyToHash = if (body != null && body !is MultipartBody) {
+            val bodyToHash = if (body != null && body !is MultipartBody &&
+                    request.body?.contentType().toString() != MediaType.APPLICATION_OCTET_STREAM_VALUE) {
                 val buffer = Buffer()
                 body.writeTo(buffer)
                 buffer.readByteArray()

@@ -39,7 +39,7 @@ export default {
         )
     },
     // 查询包版本列表
-    getVersionList (_, { projectId, repoName, packageKey, version, current = 1, limit = 10 }) {
+    getVersionList (_, { projectId, repoName, packageKey, version, current = 1, limit = 10, sortProperty = 'createdDate' }) {
         return Vue.prototype.$ajax.get(
             `${prefix}/version/page/${projectId}/${repoName}`,
             {
@@ -47,7 +47,8 @@ export default {
                     pageNumber: current,
                     pageSize: limit,
                     packageKey,
-                    version
+                    version,
+                    sortProperty
                 }
             }
         )
@@ -96,7 +97,7 @@ export default {
         )
     },
     // 跨仓库搜索
-    searchPackageList (_, { projectId, repoType, repoName, packageName, property = 'name', direction = 'ASC', current = 1, limit = 20, extRules = [] }) {
+    searchPackageList (_, { projectId, repoType, repoName, repoNames = [], packageName, property = 'name', direction = 'ASC', current = 1, limit = 20, extRules = [] }) {
         const isGeneric = repoType === 'generic'
         return Vue.prototype.$ajax.post(
             `${prefix}/${isGeneric ? 'node/queryWithoutCount' : 'package/search'}`,
@@ -118,7 +119,7 @@ export default {
                                 operation: 'EQ'
                             }]
                             : []),
-                        ...(repoType
+                        ...((MODE_CONFIG === 'ci' ? !isGeneric : true) && repoType
                             ? [{
                                 field: 'repoType',
                                 value: repoType.toUpperCase(),
@@ -135,8 +136,8 @@ export default {
                                 ...(MODE_CONFIG === 'ci' && isGeneric
                                     ? [{
                                         field: 'repoName',
-                                        value: ['report', 'log'],
-                                        operation: 'NIN'
+                                        value: repoNames,
+                                        operation: 'IN'
                                     }]
                                     : [])
                             ]),
@@ -166,7 +167,8 @@ export default {
     getDomain ({ state, commit }, repoType) {
         const urlMap = {
             docker: 'docker/ext/addr',
-            npm: 'npm/ext/address'
+            npm: 'npm/ext/address',
+            helm: 'helm/ext/address'
         }
         if (!urlMap[repoType] || state.domain[repoType]) return
         Vue.prototype.$ajax.get(

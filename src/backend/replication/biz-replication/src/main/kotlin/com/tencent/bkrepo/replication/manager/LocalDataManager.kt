@@ -27,11 +27,18 @@
 
 package com.tencent.bkrepo.replication.manager
 
+import com.tencent.bkrepo.common.artifact.exception.ArtifactNotFoundException
+import com.tencent.bkrepo.common.artifact.exception.NodeNotFoundException
+import com.tencent.bkrepo.common.artifact.exception.PackageNotFoundException
+import com.tencent.bkrepo.common.artifact.exception.ProjectNotFoundException
+import com.tencent.bkrepo.common.artifact.exception.RepoNotFoundException
+import com.tencent.bkrepo.common.artifact.exception.VersionNotFoundException
 import com.tencent.bkrepo.common.artifact.stream.Range
 import com.tencent.bkrepo.common.storage.core.StorageService
+import com.tencent.bkrepo.common.storage.pojo.FileInfo
+import com.tencent.bkrepo.replication.constant.MD5
 import com.tencent.bkrepo.replication.constant.NODE_FULL_PATH
 import com.tencent.bkrepo.replication.constant.SIZE
-import com.tencent.bkrepo.repository.api.MetadataClient
 import com.tencent.bkrepo.repository.api.NodeClient
 import com.tencent.bkrepo.repository.api.PackageClient
 import com.tencent.bkrepo.repository.api.ProjectClient
@@ -58,39 +65,32 @@ class LocalDataManager(
     private val repositoryClient: RepositoryClient,
     private val nodeClient: NodeClient,
     private val packageClient: PackageClient,
-    private val metadataClient: MetadataClient,
     private val storageService: StorageService
 ) {
 
     /**
      * 获取blob文件数据
      */
-    @Throws(IllegalStateException::class)
     fun getBlobData(sha256: String, length: Long, repoInfo: RepositoryDetail): InputStream {
-        val blob = storageService.load(sha256, Range.full(length), repoInfo.storageCredentials)
-        check(blob != null) { "File data[$sha256] does not exist" }
-        return blob
+        return storageService.load(sha256, Range.full(length), repoInfo.storageCredentials)
+            ?: throw ArtifactNotFoundException(sha256)
     }
 
     /**
      * 获取blob文件数据
      */
-    @Throws(IllegalStateException::class)
     fun getBlobDataByRange(sha256: String, range: Range, repoInfo: RepositoryDetail): InputStream {
-        val blob = storageService.load(sha256, range, repoInfo.storageCredentials)
-        check(blob != null) { "File data[$sha256] does not exist" }
-        return blob
+        return storageService.load(sha256, range, repoInfo.storageCredentials)
+            ?: throw ArtifactNotFoundException(sha256)
     }
 
     /**
      * 查找项目
      * 项目不存在抛异常
      */
-    @Throws(IllegalStateException::class)
     fun findProjectById(projectId: String): ProjectInfo {
-        val project = projectClient.getProjectInfo(projectId).data
-        check(project != null) { "Local project[$projectId] does not exist" }
-        return project
+        return projectClient.getProjectInfo(projectId).data
+            ?: throw ProjectNotFoundException(projectId)
     }
 
     /**
@@ -104,11 +104,9 @@ class LocalDataManager(
      * 查找仓库
      * 仓库不存在抛异常
      */
-    @Throws(IllegalStateException::class)
     fun findRepoByName(projectId: String, repoName: String, type: String? = null): RepositoryDetail {
-        val repo = repositoryClient.getRepoDetail(projectId, repoName, type).data
-        check(repo != null) { "Local repository[$repoName] does not exist" }
-        return repo
+        return repositoryClient.getRepoDetail(projectId, repoName, type).data
+            ?: throw RepoNotFoundException(repoName)
     }
 
     /**
@@ -121,46 +119,54 @@ class LocalDataManager(
     /**
      * 根据packageKey查找包信息
      */
-    @Throws(IllegalStateException::class)
     fun findPackageByKey(projectId: String, repoName: String, packageKey: String): PackageSummary {
-        val packageSummary = packageClient.findPackageByKey(projectId, repoName, packageKey).data
-        check(packageSummary != null) { "Local package[$packageKey] does not exist" }
-        return packageSummary
+        return packageClient.findPackageByKey(projectId, repoName, packageKey).data
+            ?: throw PackageNotFoundException(packageKey)
     }
 
     /**
      * 查询所有版本
      */
-    @Throws(IllegalStateException::class)
     fun listAllVersion(
         projectId: String,
         repoName: String,
         packageKey: String,
         option: VersionListOption
     ): List<PackageVersion> {
-        val versions = packageClient.listAllVersion(projectId, repoName, packageKey, option).data
-        check(versions != null) { "Local package [$packageKey] does not exist" }
-        return versions
+        return packageClient.listAllVersion(projectId, repoName, packageKey, option).data
+            ?: throw PackageNotFoundException(packageKey)
     }
 
     /**
      * 查询指定版本
      */
-    @Throws(IllegalStateException::class)
     fun findPackageVersion(projectId: String, repoName: String, packageKey: String, version: String): PackageVersion {
-        val packageVersion = packageClient.findVersionByName(projectId, repoName, packageKey, version).data
-        check(packageVersion != null) { "Local package version [$version] does not exist" }
-        return packageVersion
+        return packageClient.findVersionByName(projectId, repoName, packageKey, version).data
+            ?: throw VersionNotFoundException(packageKey)
     }
 
     /**
      * 查找节点
      */
-    @Throws(IllegalStateException::class)
     fun findNodeDetail(projectId: String, repoName: String, fullPath: String): NodeDetail {
-        val nodeDetail = findNode(projectId, repoName, fullPath)
-        check(nodeDetail != null) { "Local node path [$fullPath] does not exist" }
-        return nodeDetail
+        return findNode(projectId, repoName, fullPath)
+            ?: throw NodeNotFoundException(fullPath)
+    }
+
+
+    /**
+     * 查找package对应version下的节点
+     */
+    fun findNodeDetailInVersion(
+        projectId: String, repoName: String, fullPath: String
+    ): NodeDetail {
+        return findNode(projectId, repoName, fullPath) ?: findDeletedNodeDetail(projectId, repoName, fullPath)
+            ?: throw NodeNotFoundException(fullPath)
+    }
+    fun findDeletedNodeDetail(
+        projectId: String, repoName: String, fullPath: String
+    ): NodeDetail? {
+        return nodeClient.getDeletedNodeDetail(projectId, repoName, fullPath).data?.firstOrNull()
     }
 
     /**
@@ -177,32 +183,37 @@ class LocalDataManager(
         projectId: String,
         repoName: String,
         sha256: String
-    ): Long {
+    ): FileInfo {
         val queryModel = NodeQueryBuilder()
-            .select(NODE_FULL_PATH, SIZE)
+            .select(NODE_FULL_PATH, SIZE, MD5)
             .projectId(projectId)
             .repoName(repoName)
             .sha256(sha256)
+            .page(1, 1)
             .sortByAsc(NODE_FULL_PATH)
-        val result = nodeClient.search(queryModel.build()).data
-        check(result != null) { "Local node path with [$sha256] in repo $projectId|$repoName does not exist" }
-        check(result.records.isNotEmpty()) {
-            "Local node path with [$sha256] in repo $projectId|$repoName does not exist"
+        val result = nodeClient.queryWithoutCount(queryModel.build()).data
+        if (result == null || result.records.isEmpty()) {
+            throw NodeNotFoundException(sha256)
         }
-        return result.records[0][SIZE].toString().toLong()
+        return FileInfo(
+            sha256 = sha256,
+            md5 = result.records[0][MD5].toString(),
+            size = result.records[0][SIZE].toString().toLong()
+        )
     }
 
 /**
      * 分页查询包
      */
-    @Throws(IllegalStateException::class)
     fun listPackagePage(projectId: String, repoName: String, option: PackageListOption): List<PackageSummary> {
         val packages = packageClient.listPackagePage(
             projectId = projectId,
             repoName = repoName,
             option = option
         ).data?.records
-        check(packages != null) { "Local packages not found" }
+        if (packages.isNullOrEmpty()) {
+            return emptyList()
+        }
         return packages
     }
 
@@ -217,7 +228,9 @@ class LocalDataManager(
             includeFolder = true,
             deep = false
         ).data
-        check(nodes != null) { "Local packages not found" }
+        if (nodes.isNullOrEmpty()) {
+            throw NodeNotFoundException("$projectId/$repoName")
+        }
         return nodes
     }
 
@@ -244,5 +257,15 @@ class LocalDataManager(
     fun loadInputStreamByRange(sha256: String, range: Range, projectId: String, repoName: String): InputStream {
         val repo = findRepoByName(projectId, repoName)
         return getBlobDataByRange(sha256, range, repo)
+    }
+
+
+    /**
+     * 从项目仓库统计信息中找出对应仓库的大小
+     */
+    fun getRepoMetricInfo(projectId: String, repoName: String): Long {
+        findRepoByName(projectId, repoName)
+        val projectMetrics = projectClient.getProjectMetrics(projectId).data ?: return 0
+        return projectMetrics.repoMetrics.firstOrNull { it.repoName == repoName }?.size ?: 0
     }
 }

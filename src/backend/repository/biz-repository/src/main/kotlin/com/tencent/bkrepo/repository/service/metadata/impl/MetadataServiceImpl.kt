@@ -31,11 +31,17 @@
 
 package com.tencent.bkrepo.repository.service.metadata.impl
 
+import com.tencent.bkrepo.common.api.constant.StringPool
 import com.tencent.bkrepo.common.api.exception.ErrorCodeException
+import com.tencent.bkrepo.common.api.message.CommonMessageCode
+import com.tencent.bkrepo.common.artifact.exception.NodeNotFoundException
 import com.tencent.bkrepo.common.artifact.message.ArtifactMessageCode
 import com.tencent.bkrepo.common.artifact.path.PathUtils.normalizeFullPath
+import com.tencent.bkrepo.common.artifact.util.ClusterUtils
 import com.tencent.bkrepo.common.security.exception.PermissionException
+import com.tencent.bkrepo.common.service.cluster.DefaultCondition
 import com.tencent.bkrepo.common.service.util.SpringContextUtils.Companion.publishEvent
+import com.tencent.bkrepo.repository.config.RepositoryProperties
 import com.tencent.bkrepo.repository.dao.NodeDao
 import com.tencent.bkrepo.repository.model.TMetadata
 import com.tencent.bkrepo.repository.model.TNode
@@ -47,6 +53,7 @@ import com.tencent.bkrepo.repository.util.NodeEventFactory.buildMetadataDeletedE
 import com.tencent.bkrepo.repository.util.NodeEventFactory.buildMetadataSavedEvent
 import com.tencent.bkrepo.repository.util.NodeQueryHelper
 import org.slf4j.LoggerFactory
+import org.springframework.context.annotation.Conditional
 import org.springframework.data.mongodb.core.query.Query
 import org.springframework.data.mongodb.core.query.Update
 import org.springframework.data.mongodb.core.query.inValues
@@ -58,8 +65,10 @@ import org.springframework.transaction.annotation.Transactional
  * 元数据服务实现类
  */
 @Service
+@Conditional(DefaultCondition::class)
 class MetadataServiceImpl(
-    private val nodeDao: NodeDao
+    private val nodeDao: NodeDao,
+    private val repositoryProperties: RepositoryProperties
 ) : MetadataService {
 
     override fun listMetadata(projectId: String, repoName: String, fullPath: String): Map<String, Any> {
@@ -76,10 +85,18 @@ class MetadataServiceImpl(
             val fullPath = normalizeFullPath(fullPath)
             val node = nodeDao.findNode(projectId, repoName, fullPath)
                 ?: throw ErrorCodeException(ArtifactMessageCode.NODE_NOT_FOUND, fullPath)
-
+            ClusterUtils.checkContainsSrcCluster(node.clusterNames)
             val oldMetadata = node.metadata ?: ArrayList()
-            val newMetadata = MetadataUtils.compatibleConvertAndCheck(metadata, nodeMetadata)
-            node.metadata = MetadataUtils.merge(oldMetadata, newMetadata)
+            val newMetadata = MetadataUtils.compatibleConvertAndCheck(
+                metadata,
+                MetadataUtils.changeSystem(nodeMetadata, repositoryProperties.allowUserAddSystemMetadata)
+            )
+            checkIfUpdateSystemMetadata(oldMetadata, newMetadata)
+            node.metadata = if (replace) {
+                newMetadata
+            } else {
+                MetadataUtils.merge(oldMetadata, newMetadata)
+            }
 
             nodeDao.save(node)
             publishEvent(buildMetadataSavedEvent(request))
@@ -110,7 +127,9 @@ class MetadataServiceImpl(
             val query = NodeQueryHelper.nodeQuery(projectId, repoName, fullPath)
 
             // 检查是否有更新权限
-            nodeDao.findOne(query)?.metadata?.forEach {
+            val node = nodeDao.findOne(query) ?: throw NodeNotFoundException(fullPath)
+            ClusterUtils.checkContainsSrcCluster(node.clusterNames)
+            node.metadata?.forEach {
                 if (it.key in keyList && it.system && !allowDeleteSystemMetadata) {
                     throw PermissionException("No permission to update system metadata[${it.key}]")
                 }
@@ -124,6 +143,30 @@ class MetadataServiceImpl(
             publishEvent(buildMetadataDeletedEvent(this))
             logger.info("Delete metadata[$keyList] on node[/$projectId/$repoName$fullPath] success.")
         }
+    }
+
+    /**
+     * 检查是否有更新允许用户添加的系统元数据
+     */
+    private fun checkIfUpdateSystemMetadata(
+        oldMetadata: MutableList<TMetadata>,
+        newMetadata: MutableList<TMetadata>
+    ) {
+        val oldAllowUserAddSystemMetadata =
+            oldMetadata.map { it.key }.intersectIgnoreCase(repositoryProperties.allowUserAddSystemMetadata)
+        val newAllowUserAddSystemMetadata =
+            newMetadata.map { it.key }.intersectIgnoreCase(repositoryProperties.allowUserAddSystemMetadata)
+        val updateSystemMetadata = oldAllowUserAddSystemMetadata.intersect(newAllowUserAddSystemMetadata)
+        if (updateSystemMetadata.isNotEmpty()) {
+            throw ErrorCodeException(
+                CommonMessageCode.PARAMETER_INVALID,
+                updateSystemMetadata.joinToString(StringPool.COMMA)
+            )
+        }
+    }
+
+    private fun List<String>.intersectIgnoreCase(list: List<String>): List<String> {
+        return this.filter { k -> list.any { it.equals(k, true) } }
     }
 
     companion object {

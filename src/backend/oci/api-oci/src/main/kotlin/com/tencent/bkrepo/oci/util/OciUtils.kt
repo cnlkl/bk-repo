@@ -30,22 +30,16 @@ package com.tencent.bkrepo.oci.util
 import com.tencent.bkrepo.common.api.constant.StringPool
 import com.tencent.bkrepo.common.api.util.StreamUtils.readText
 import com.tencent.bkrepo.common.api.util.readJsonString
-import com.tencent.bkrepo.common.api.util.readYamlString
-import com.tencent.bkrepo.common.api.util.toJsonString
 import com.tencent.bkrepo.common.artifact.pojo.RepositoryType
 import com.tencent.bkrepo.common.artifact.util.PackageKeys
 import com.tencent.bkrepo.oci.constant.DOCKER_IMAGE_MANIFEST_MEDIA_TYPE_V1
-import com.tencent.bkrepo.oci.constant.FILE_EXTENSION
-import com.tencent.bkrepo.oci.constant.MANIFEST_INVALID_CODE
-import com.tencent.bkrepo.oci.constant.MANIFEST_INVALID_DESCRIPTION
-import com.tencent.bkrepo.oci.constant.MANIFEST_INVALID_MESSAGE
+import com.tencent.bkrepo.oci.constant.OciMessageCode
 import com.tencent.bkrepo.oci.exception.OciBadRequestException
 import com.tencent.bkrepo.oci.model.Descriptor
 import com.tencent.bkrepo.oci.model.ManifestSchema1
 import com.tencent.bkrepo.oci.model.ManifestSchema2
 import com.tencent.bkrepo.oci.model.SchemaVersion
-import com.tencent.bkrepo.oci.pojo.metadata.HelmChartMetadata
-import com.tencent.bkrepo.oci.util.DecompressUtil.getArchivesContent
+import org.apache.logging.log4j.util.Strings
 import java.io.InputStream
 
 /**
@@ -61,7 +55,7 @@ object OciUtils {
         try {
             return content.readJsonString()
         } catch (e: Exception) {
-            throw OciBadRequestException(MANIFEST_INVALID_MESSAGE, MANIFEST_INVALID_CODE, MANIFEST_INVALID_DESCRIPTION)
+            throw OciBadRequestException(OciMessageCode.OCI_MANIFEST_INVALID, Strings.EMPTY)
         }
     }
 
@@ -82,7 +76,7 @@ object OciUtils {
         try {
             return content.readJsonString()
         } catch (e: Exception) {
-            throw OciBadRequestException(MANIFEST_INVALID_MESSAGE, MANIFEST_INVALID_CODE, MANIFEST_INVALID_DESCRIPTION)
+            throw OciBadRequestException(OciMessageCode.OCI_MANIFEST_INVALID, Strings.EMPTY)
         }
     }
 
@@ -90,17 +84,8 @@ object OciUtils {
         try {
             return content.readJsonString()
         } catch (e: Exception) {
-            throw OciBadRequestException(MANIFEST_INVALID_MESSAGE, MANIFEST_INVALID_CODE, MANIFEST_INVALID_DESCRIPTION)
+            throw OciBadRequestException(OciMessageCode.OCI_MANIFEST_INVALID, Strings.EMPTY)
         }
-    }
-
-    fun parseChartInputStream(inputStream: InputStream): HelmChartMetadata {
-        val result = inputStream.getArchivesContent(FILE_EXTENSION)
-        return result.byteInputStream().readYamlString()
-    }
-
-    fun convertToMap(chartInfo: HelmChartMetadata): Map<String, Any> {
-        return chartInfo.toJsonString().readJsonString()
     }
 
     fun manifestIterator(manifest: ManifestSchema2): List<Descriptor> {

@@ -27,7 +27,7 @@
 
 package com.tencent.bkrepo.repository.service.repo.impl
 
-import com.tencent.bkrepo.auth.api.ServicePermissionResource
+import com.tencent.bkrepo.auth.api.ServicePermissionClient
 import com.tencent.bkrepo.common.api.exception.ErrorCodeException
 import com.tencent.bkrepo.common.api.message.CommonMessageCode
 import com.tencent.bkrepo.common.api.pojo.Page
@@ -48,15 +48,21 @@ import com.tencent.bkrepo.common.artifact.pojo.configuration.composite.ProxyConf
 import com.tencent.bkrepo.common.artifact.pojo.configuration.local.LocalConfiguration
 import com.tencent.bkrepo.common.artifact.pojo.configuration.remote.RemoteConfiguration
 import com.tencent.bkrepo.common.artifact.pojo.configuration.virtual.VirtualConfiguration
+import com.tencent.bkrepo.common.mongo.dao.AbstractMongoDao.Companion.ID
 import com.tencent.bkrepo.common.mongo.dao.util.Pages
 import com.tencent.bkrepo.common.security.util.RsaUtils
 import com.tencent.bkrepo.common.security.util.SecurityUtils
+import com.tencent.bkrepo.common.service.cluster.DefaultCondition
 import com.tencent.bkrepo.common.service.util.SpringContextUtils.Companion.publishEvent
 import com.tencent.bkrepo.common.storage.credentials.StorageCredentials
 import com.tencent.bkrepo.common.stream.event.supplier.MessageSupplier
+import com.tencent.bkrepo.fs.server.constant.FAKE_SHA256
 import com.tencent.bkrepo.repository.config.RepositoryProperties
 import com.tencent.bkrepo.repository.dao.RepositoryDao
+import com.tencent.bkrepo.repository.dao.repository.ProjectMetricsRepository
+import com.tencent.bkrepo.repository.model.TNode
 import com.tencent.bkrepo.repository.model.TRepository
+import com.tencent.bkrepo.repository.pojo.node.NodeSizeInfo
 import com.tencent.bkrepo.repository.pojo.project.RepoRangeQueryRequest
 import com.tencent.bkrepo.repository.pojo.proxy.ProxyChannelCreateRequest
 import com.tencent.bkrepo.repository.pojo.proxy.ProxyChannelDeleteRequest
@@ -76,12 +82,15 @@ import com.tencent.bkrepo.repository.service.repo.StorageCredentialService
 import com.tencent.bkrepo.repository.util.RepoEventFactory.buildCreatedEvent
 import com.tencent.bkrepo.repository.util.RepoEventFactory.buildDeletedEvent
 import com.tencent.bkrepo.repository.util.RepoEventFactory.buildUpdatedEvent
+import java.time.Duration
 import org.slf4j.LoggerFactory
+import org.springframework.context.annotation.Conditional
 import org.springframework.dao.DuplicateKeyException
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Sort
 import org.springframework.data.mongodb.core.query.Criteria
 import org.springframework.data.mongodb.core.query.Query
+import org.springframework.data.mongodb.core.query.Update
 import org.springframework.data.mongodb.core.query.and
 import org.springframework.data.mongodb.core.query.inValues
 import org.springframework.data.mongodb.core.query.isEqualTo
@@ -95,16 +104,23 @@ import java.time.format.DateTimeFormatter
  * 仓库服务实现类
  */
 @Service
+@Conditional(DefaultCondition::class)
+@Suppress("TooManyFunctions")
 class RepositoryServiceImpl(
-    private val repositoryDao: RepositoryDao,
-    private val nodeService: NodeService,
+    val repositoryDao: RepositoryDao,
+    val nodeService: NodeService,
     private val projectService: ProjectService,
     private val storageCredentialService: StorageCredentialService,
     private val proxyChannelService: ProxyChannelService,
     private val repositoryProperties: RepositoryProperties,
     private val messageSupplier: MessageSupplier,
-    private val servicePermissionResource: ServicePermissionResource
+    private val servicePermissionClient: ServicePermissionClient,
+    private val projectMetricsRepository: ProjectMetricsRepository,
 ) : RepositoryService {
+
+    init {
+        Companion.repositoryProperties = repositoryProperties
+    }
 
     override fun getRepoInfo(projectId: String, name: String, type: String?): RepositoryInfo? {
         val tRepository = repositoryDao.findByNameAndType(projectId, name, type)
@@ -125,8 +141,8 @@ class RepositoryServiceImpl(
         }
     }
 
-    override fun listRepo(projectId: String, name: String?, type: String?): List<RepositoryInfo> {
-        val query = buildListQuery(projectId, name, type)
+    override fun listRepo(projectId: String, name: String?, type: String?, display: Boolean?): List<RepositoryInfo> {
+        val query = buildListQuery(projectId, name, type, display)
         return repositoryDao.find(query).map { convertToInfo(it)!! }
     }
 
@@ -135,7 +151,7 @@ class RepositoryServiceImpl(
         pageNumber: Int,
         pageSize: Int,
         name: String?,
-        type: String?
+        type: String?,
     ): Page<RepositoryInfo> {
         val query = buildListQuery(projectId, name, type)
         val pageRequest = Pages.ofRequest(pageNumber, pageSize)
@@ -147,20 +163,29 @@ class RepositoryServiceImpl(
     override fun listPermissionRepo(
         userId: String,
         projectId: String,
-        option: RepoListOption
+        option: RepoListOption,
     ): List<RepositoryInfo> {
-        var names = servicePermissionResource.listPermissionRepo(
+        var names = servicePermissionClient.listPermissionRepo(
             projectId = projectId,
             userId = userId,
-            appId = SecurityUtils.getPlatformId()
+            appId = SecurityUtils.getPlatformId(),
         ).data.orEmpty()
         if (!option.name.isNullOrBlank()) {
             names = names.filter { it.startsWith(option.name.orEmpty(), true) }
         }
         val criteria = where(TRepository::projectId).isEqualTo(projectId)
-            .and(TRepository::display).ne(false)
             .and(TRepository::name).inValues(names)
+            .and(TRepository::deleted).isEqualTo(null).apply {
+                if (option.display == true) {
+                    and(TRepository::display).ne(false)
+                } else if (option.display != null) {
+                    and(TRepository::display).isEqualTo(option.display)
+                }
+            }
         option.type?.takeIf { it.isNotBlank() }?.apply { criteria.and(TRepository::type).isEqualTo(this.toUpperCase()) }
+        option.category?.takeIf { it.isNotBlank() }?.apply {
+            criteria.and(TRepository::category).isEqualTo(this.toUpperCase())
+        }
         val query = Query(criteria).with(Sort.by(Sort.Direction.DESC, TRepository::createdDate.name))
         return repositoryDao.find(query).map { convertToInfo(it)!! }
     }
@@ -170,7 +195,7 @@ class RepositoryServiceImpl(
         projectId: String,
         pageNumber: Int,
         pageSize: Int,
-        option: RepoListOption
+        option: RepoListOption,
     ): Page<RepositoryInfo> {
         val allRepos = listPermissionRepo(userId, projectId, option)
         return Pages.buildPage(allRepos, pageNumber, pageSize)
@@ -186,6 +211,7 @@ class RepositoryServiceImpl(
         } else {
             where(TRepository::projectId).isEqualTo(projectId).and(TRepository::name).inValues(request.repoNames)
         }
+        criteria.and(TRepository::deleted).isEqualTo(null)
         val totalCount = repositoryDao.count(Query(criteria))
         val records = repositoryDao.find(Query(criteria).limit(limit).skip(skip))
             .map { convertToInfo(it) }
@@ -201,10 +227,11 @@ class RepositoryServiceImpl(
         with(repoCreateRequest) {
             Preconditions.matchPattern(name, REPO_NAME_PATTERN, this::name.name)
             Preconditions.checkArgument((description?.length ?: 0) <= REPO_DESC_MAX_LENGTH, this::description.name)
+            Preconditions.checkArgument(checkCategory(category, configuration), this::configuration.name)
             Preconditions.checkArgument(checkInterceptorConfig(configuration), this::configuration.name)
             // 确保项目一定存在
             if (!projectService.checkExist(projectId)) {
-                throw ErrorCodeException(ArtifactMessageCode.PROJECT_NOT_FOUND, name)
+                throw ErrorCodeException(ArtifactMessageCode.PROJECT_NOT_FOUND, projectId)
             }
             // 确保同名仓库不存在
             if (checkExist(projectId, name)) {
@@ -213,16 +240,47 @@ class RepositoryServiceImpl(
             // 解析存储凭证
             val credentialsKey = determineStorageKey(this)
             // 确保存储凭证Key一定存在
-            val storageCredential = credentialsKey?.takeIf { it.isNotBlank() }?.let {
+            credentialsKey?.takeIf { it.isNotBlank() }?.let {
                 storageCredentialService.findByKey(it) ?: throw ErrorCodeException(
                     CommonMessageCode.RESOURCE_NOT_FOUND,
-                    it
+                    it,
                 )
             }
             // 初始化仓库配置
             val repoConfiguration = configuration ?: buildRepoConfiguration(this)
             // 创建仓库
-            val repository = TRepository(
+            val repository = buildTRepository(this, repoConfiguration, credentialsKey)
+            return try {
+                if (repoConfiguration is CompositeConfiguration) {
+                    val old = queryCompositeConfiguration(projectId, name, type)
+                    updateCompositeConfiguration(repoConfiguration, old, repository, operator)
+                }
+                repository.configuration = cryptoConfigurationPwd(repoConfiguration, false).toJsonString()
+                checkAndRemoveDeletedRepo(projectId, name, credentialsKey)
+                repositoryDao.insert(repository)
+                val event = buildCreatedEvent(repoCreateRequest)
+                publishEvent(event)
+                messageSupplier.delegateToSupplier(
+                    data = event,
+                    topic = event.topic,
+                    key = event.getFullResourceKey(),
+                )
+                logger.info("Create repository [$repoCreateRequest] success.")
+                convertToDetail(repository)!!
+            } catch (exception: DuplicateKeyException) {
+                logger.warn("Insert repository[$projectId/$name] error: [${exception.message}]")
+                getRepoDetail(projectId, name, type.name)!!
+            }
+        }
+    }
+
+    fun buildTRepository(
+        request: RepoCreateRequest,
+        repoConfiguration: RepositoryConfiguration,
+        credentialsKey: String?,
+    ): TRepository {
+        with(request) {
+            return TRepository(
                 name = name,
                 type = type,
                 category = category,
@@ -236,28 +294,9 @@ class RepositoryServiceImpl(
                 lastModifiedBy = operator,
                 lastModifiedDate = LocalDateTime.now(),
                 quota = quota,
-                used = 0
+                used = 0,
+                display = display,
             )
-            return try {
-                if (repoConfiguration is CompositeConfiguration) {
-                    val old = queryCompositeConfiguration(projectId, name, type)
-                    updateCompositeConfiguration(repoConfiguration, old, repository, operator)
-                }
-                repository.configuration = cryptoConfigurationPwd(repoConfiguration, false).toJsonString()
-                repositoryDao.insert(repository)
-                val event = buildCreatedEvent(repoCreateRequest)
-                publishEvent(event)
-                messageSupplier.delegateToSupplier(
-                    data = event,
-                    topic = event.topic,
-                    key = event.getFullResourceKey()
-                )
-                logger.info("Create repository [$repoCreateRequest] success.")
-                convertToDetail(repository, storageCredential)!!
-            } catch (exception: DuplicateKeyException) {
-                logger.warn("Insert repository[$projectId/$name] error: [${exception.message}]")
-                getRepoDetail(projectId, name, type.name)!!
-            }
         }
     }
 
@@ -280,6 +319,7 @@ class RepositoryServiceImpl(
                 updateRepoConfiguration(it, cryptoConfigurationPwd(oldConfiguration), repository, operator)
                 repository.configuration = cryptoConfigurationPwd(it, false).toJsonString()
             }
+            repository.display = display
             repositoryDao.save(repository)
         }
         val event = buildUpdatedEvent(repoUpdateRequest)
@@ -287,7 +327,7 @@ class RepositoryServiceImpl(
         messageSupplier.delegateToSupplier(
             data = event,
             topic = event.topic,
-            key = event.getFullResourceKey()
+            key = event.getFullResourceKey(),
         )
         logger.info("Update repository[$repoUpdateRequest] success.")
     }
@@ -301,11 +341,19 @@ class RepositoryServiceImpl(
             } else {
                 val artifactInfo = DefaultArtifactInfo(projectId, name, ROOT)
                 nodeService.countFileNode(artifactInfo).takeIf { it == 0L } ?: throw ErrorCodeException(
-                    ArtifactMessageCode.REPOSITORY_CONTAINS_FILE
+                    ArtifactMessageCode.REPOSITORY_CONTAINS_FILE,
                 )
                 nodeService.deleteByPath(projectId, name, ROOT, operator)
             }
-            repositoryDao.deleteById(repository.id)
+
+            // 为避免仓库被删除后节点无法被自动清理的问题，对仓库实行假删除
+            if (!repository.id.isNullOrBlank()) {
+                repositoryDao.updateFirst(
+                    Query(Criteria.where(ID).isEqualTo(repository.id)),
+                    Update().set(TRepository::deleted.name, LocalDateTime.now()),
+                )
+            }
+
             // 删除关联的库
             if (repository.category == RepositoryCategory.COMPOSITE) {
                 val configuration = repository.configuration.readJsonString<CompositeConfiguration>()
@@ -319,12 +367,22 @@ class RepositoryServiceImpl(
     }
 
     override fun allRepos(projectId: String?, repoName: String?, repoType: RepositoryType?): List<RepositoryInfo?> {
-        val criteria = Criteria()
+        val criteria = where(TRepository::deleted).isEqualTo(null)
         projectId?.let { criteria.and(TRepository::projectId.name).`is`(projectId) }
         repoName?.let { criteria.and(TRepository::name.name).`is`(repoName) }
         repoType?.let { criteria.and(TRepository::type.name).`is`(repoType) }
         val result = repositoryDao.find(Query(criteria))
         return result.map { convertToInfo(it) }
+    }
+
+    override fun statRepo(projectId: String, repoName: String): NodeSizeInfo {
+        val projectMetrics = projectMetricsRepository.findFirstByProjectIdOrderByCreatedDateDesc(projectId)
+        val repoMetrics = projectMetrics?.repoMetrics?.firstOrNull { it.repoName == repoName }
+        return NodeSizeInfo(
+            subNodeCount = repoMetrics?.num ?: 0,
+            subNodeWithoutFolderCount = repoMetrics?.num ?: 0,
+            size = repoMetrics?.size ?: 0,
+        )
     }
 
     /**
@@ -333,7 +391,7 @@ class RepositoryServiceImpl(
     private fun queryCompositeConfiguration(
         projectId: String,
         repoName: String,
-        repoType: RepositoryType
+        repoType: RepositoryType,
     ): CompositeConfiguration? {
         val proxyList = proxyChannelService.listProxyChannel(projectId, repoName, repoType)
         if (proxyList.isEmpty()) return null
@@ -344,7 +402,7 @@ class RepositoryServiceImpl(
     /**
      * 检查仓库是否存在，不存在则抛异常
      */
-    private fun checkRepository(projectId: String, repoName: String, repoType: String? = null): TRepository {
+    fun checkRepository(projectId: String, repoName: String, repoType: String? = null): TRepository {
         return repositoryDao.findByNameAndType(projectId, repoName, repoType)
             ?: throw ErrorCodeException(REPOSITORY_NOT_FOUND, repoName)
     }
@@ -352,9 +410,17 @@ class RepositoryServiceImpl(
     /**
      * 构造list查询条件
      */
-    private fun buildListQuery(projectId: String, repoName: String? = null, repoType: String? = null): Query {
+    private fun buildListQuery(
+        projectId: String,
+        repoName: String? = null,
+        repoType: String? = null,
+        display: Boolean? = null,
+    ): Query {
         val criteria = where(TRepository::projectId).isEqualTo(projectId)
-        criteria.and(TRepository::display).ne(false)
+        if (display == true) {
+            criteria.and(TRepository::display).ne(false)
+        }
+        criteria.and(TRepository::deleted).isEqualTo(null)
         repoName?.takeIf { it.isNotBlank() }?.apply { criteria.and(TRepository::name).regex("^$this") }
         repoType?.takeIf { it.isNotBlank() }?.apply { criteria.and(TRepository::type).isEqualTo(this.toUpperCase()) }
         return Query(criteria).with(Sort.by(Sort.Direction.DESC, TRepository::createdDate.name))
@@ -369,6 +435,7 @@ class RepositoryServiceImpl(
             RepositoryCategory.REMOTE -> RemoteConfiguration()
             RepositoryCategory.VIRTUAL -> VirtualConfiguration()
             RepositoryCategory.COMPOSITE -> CompositeConfiguration()
+            RepositoryCategory.PROXY -> com.tencent.bkrepo.common.artifact.pojo.configuration.proxy.ProxyConfiguration()
         }
     }
 
@@ -379,7 +446,7 @@ class RepositoryServiceImpl(
         new: RepositoryConfiguration,
         old: RepositoryConfiguration,
         repository: TRepository,
-        operator: String
+        operator: String,
     ) {
         val newType = new::class.simpleName
         val oldType = old::class.simpleName
@@ -398,7 +465,7 @@ class RepositoryServiceImpl(
         new: CompositeConfiguration,
         old: CompositeConfiguration? = null,
         repository: TRepository,
-        operator: String
+        operator: String,
     ) {
         // 校验
         new.proxy.channelList.forEach {
@@ -452,17 +519,17 @@ class RepositoryServiceImpl(
     /**
      * 删除关联的代理仓库
      */
-    private fun deleteProxyRepo(repository: TRepository, proxy: ProxyChannelSetting) {
+    fun deleteProxyRepo(repository: TRepository, proxy: ProxyChannelSetting) {
         val proxyRepository = ProxyChannelDeleteRequest(
             repoType = repository.type,
             projectId = repository.projectId,
             repoName = repository.name,
-            name = proxy.name
+            name = proxy.name,
         )
         proxyChannelService.deleteProxy(proxyRepository)
         logger.info(
             "Success to delete private proxy channel [${proxy.name}]" +
-                " in repo[${repository.projectId}|${repository.name}]"
+                " in repo[${repository.projectId}|${repository.name}]",
         )
     }
 
@@ -477,7 +544,7 @@ class RepositoryServiceImpl(
             username = proxy.username,
             password = proxy.password,
             public = proxy.public,
-            credentialKey = proxy.credentialKey
+            credentialKey = proxy.credentialKey,
         )
         proxyChannelService.createProxy(operator, proxyRepository)
         logger.info("Success to create private proxy repository[$proxyRepository]")
@@ -494,14 +561,16 @@ class RepositoryServiceImpl(
             username = proxy.username,
             password = proxy.password,
             public = proxy.public,
-            credentialKey = proxy.credentialKey
+            credentialKey = proxy.credentialKey,
         )
         proxyChannelService.updateProxy(operator, proxyRepository)
         logger.info("Success to update private proxy repository[$proxyRepository]")
     }
 
     override fun listRepoPageByType(type: String, pageNumber: Int, pageSize: Int): Page<RepositoryDetail> {
-        val query = Query(TRepository::type.isEqualTo(type)).with(Sort.by(TRepository::name.name))
+        val query = Query(TRepository::type.isEqualTo(type))
+            .addCriteria(TRepository::deleted.isEqualTo(null))
+            .with(Sort.by(TRepository::name.name))
         val count = repositoryDao.count(query)
         val pageQuery = query.with(PageRequest.of(pageNumber, pageSize))
         val data = repositoryDao.find(pageQuery).map {
@@ -520,7 +589,7 @@ class RepositoryServiceImpl(
      * 3. 如果配有匹配到，则根据仓库类型进行匹配storageCredentialsKey
      * 3. 如果以上都没匹配，则使用全局默认storageCredentialsKey
      */
-    private fun determineStorageKey(request: RepoCreateRequest): String? {
+    fun determineStorageKey(request: RepoCreateRequest): String? {
         with(repositoryProperties) {
             return if (!request.storageCredentialsKey.isNullOrBlank()) {
                 request.storageCredentialsKey
@@ -534,11 +603,27 @@ class RepositoryServiceImpl(
         }
     }
 
+    override fun getArchivableSize(projectId: String, repoName: String?, days: Int, size: Long?): Long {
+        val cutoffTime = LocalDateTime.now().minus(Duration.ofDays(days.toLong()))
+        val criteria = where(TNode::folder).isEqualTo(false)
+            .and(TNode::deleted).isEqualTo(null)
+            .and(TNode::sha256).ne(FAKE_SHA256)
+            .and(TNode::archived).ne(true)
+            .and(TNode::projectId).isEqualTo(projectId)
+            .orOperator(
+                where(TNode::lastAccessDate).isEqualTo(null),
+                where(TNode::lastAccessDate).lt(cutoffTime),
+            ).apply {
+                repoName?.let { and(TNode::repoName).isEqualTo(it) }
+                size?.let { and(TNode::size).gt(it) }
+            }
+        return nodeService.aggregateComputeSize(criteria)
+    }
+
     /**
      * 检查下载拦截器配置
      *
      */
-    @Suppress("UNCHECKED_CAST")
     private fun checkInterceptorConfig(configuration: RepositoryConfiguration?): Boolean {
         val settings = configuration?.settings
         settings?.let {
@@ -557,16 +642,56 @@ class RepositoryServiceImpl(
         return true
     }
 
+    /**
+     * 检查仓库类型是否一致
+     */
+    private fun checkCategory(category: RepositoryCategory, configuration: RepositoryConfiguration?): Boolean {
+        if (configuration == null) {
+            return true
+        }
+        return when(configuration) {
+            is com.tencent.bkrepo.common.artifact.pojo.configuration.proxy.ProxyConfiguration ->
+                category == RepositoryCategory.PROXY
+            is CompositeConfiguration -> category == RepositoryCategory.COMPOSITE
+            is LocalConfiguration -> category == RepositoryCategory.LOCAL
+            is RemoteConfiguration -> category == RepositoryCategory.REMOTE
+            is VirtualConfiguration -> category == RepositoryCategory.VIRTUAL
+            else -> false
+        }
+    }
+
+    /**
+     * 查找是否存在已被逻辑删除的仓库，如果存在且存储凭证相同，则删除旧仓库再插入新数据；如果存在且存储凭证不同，则禁止创建仓库
+     */
+    private fun checkAndRemoveDeletedRepo(projectId: String, repoName: String, credentialsKey: String?) {
+        val query = Query(
+            where(TRepository::projectId).isEqualTo(projectId)
+                .and(TRepository::name).isEqualTo(repoName)
+                .and(TRepository::deleted).ne(null),
+        )
+        repositoryDao.findOne(query)?.let {
+            if (credentialsKey == it.credentialsKey) {
+                repositoryDao.remove(query)
+                logger.info("Retrieved deleted record of Repository[$projectId/$repoName] before creating")
+            } else {
+                throw ErrorCodeException(ArtifactMessageCode.REPOSITORY_EXISTED, repoName)
+            }
+        }
+    }
+
     companion object {
         private val logger = LoggerFactory.getLogger(RepositoryServiceImpl::class.java)
         private const val REPO_NAME_PATTERN = "[a-zA-Z_][a-zA-Z0-9\\.\\-_]{1,63}"
         private const val REPO_DESC_MAX_LENGTH = 200
+        private const val SETTING_CLIENT_URL = "clientUrl"
+        private lateinit var repositoryProperties: RepositoryProperties
 
-        private fun convertToDetail(
+        fun convertToDetail(
             tRepository: TRepository?,
-            storageCredentials: StorageCredentials? = null
+            storageCredentials: StorageCredentials? = null,
         ): RepositoryDetail? {
             return tRepository?.let {
+                handlerConfiguration(it)
                 RepositoryDetail(
                     name = it.name,
                     type = it.type,
@@ -582,14 +707,16 @@ class RepositoryServiceImpl(
                     lastModifiedDate = it.lastModifiedDate.format(DateTimeFormatter.ISO_DATE_TIME),
                     quota = it.quota,
                     used = it.used,
-                    oldCredentialsKey = it.oldCredentialsKey
+                    oldCredentialsKey = it.oldCredentialsKey,
                 )
             }
         }
 
         private fun convertToInfo(tRepository: TRepository?): RepositoryInfo? {
             return tRepository?.let {
+                handlerConfiguration(it)
                 RepositoryInfo(
+                    id = it.id,
                     name = it.name,
                     type = it.type,
                     category = it.category,
@@ -603,8 +730,30 @@ class RepositoryServiceImpl(
                     lastModifiedBy = it.lastModifiedBy,
                     lastModifiedDate = it.lastModifiedDate.format(DateTimeFormatter.ISO_DATE_TIME),
                     quota = it.quota,
-                    used = it.used
+                    used = it.used,
+                    display = it.display,
                 )
+            }
+        }
+
+        private fun handlerConfiguration(repository: TRepository) {
+            with(repository) {
+                val config = configuration.readJsonString<RepositoryConfiguration>()
+                if (config is com.tencent.bkrepo.common.artifact.pojo.configuration.proxy.ProxyConfiguration &&
+                    type == RepositoryType.GIT
+                ) {
+                    config.url = "${repositoryProperties.gitUrl}/$projectId/$name.git"
+                    config.settings[SETTING_CLIENT_URL] = config.url!!
+                } else if (config is com.tencent.bkrepo.common.artifact.pojo.configuration.proxy.ProxyConfiguration &&
+                    type == RepositoryType.SVN &&
+                    repositoryProperties.svnUrl.isNotEmpty()
+                ) {
+                    config.url = "${repositoryProperties.svnUrl}/$projectId/$name"
+                    config.settings[SETTING_CLIENT_URL] = config.url!!
+                } else if (config is RemoteConfiguration && type == RepositoryType.LFS) {
+                    config.settings[SETTING_CLIENT_URL] = "${repositoryProperties.gitUrl}/lfs/$projectId/$name/"
+                }
+                configuration = config.toJsonString()
             }
         }
 
@@ -616,7 +765,7 @@ class RepositoryServiceImpl(
                     url = url,
                     credentialKey = credentialKey,
                     username = username,
-                    password = password
+                    password = password,
                 )
             }
         }
@@ -626,7 +775,7 @@ class RepositoryServiceImpl(
          */
         fun cryptoConfigurationPwd(
             repoConfiguration: RepositoryConfiguration,
-            decrypt: Boolean = true
+            decrypt: Boolean = true,
         ): RepositoryConfiguration {
             if (repoConfiguration is CompositeConfiguration) {
                 repoConfiguration.proxy.channelList.forEach {

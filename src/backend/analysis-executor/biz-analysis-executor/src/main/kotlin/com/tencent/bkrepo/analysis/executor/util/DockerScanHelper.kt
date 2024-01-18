@@ -28,7 +28,9 @@
 package com.tencent.bkrepo.analysis.executor.util
 
 import com.github.dockerjava.api.DockerClient
+import com.github.dockerjava.api.async.ResultCallback.Adapter
 import com.github.dockerjava.api.model.Binds
+import com.github.dockerjava.api.model.Frame
 import com.tencent.bkrepo.analysis.executor.configuration.ScannerExecutorProperties
 import com.tencent.bkrepo.analysis.executor.pojo.ScanExecutorTask
 import com.tencent.bkrepo.common.analysis.pojo.scanner.utils.DockerUtils
@@ -38,6 +40,7 @@ import com.tencent.bkrepo.common.analysis.pojo.scanner.utils.DockerUtils.startCo
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import kotlin.math.max
 
 class DockerScanHelper(
@@ -48,6 +51,8 @@ class DockerScanHelper(
 
     fun scan(
         image: String,
+        userName: String?,
+        password: String?,
         binds: Binds,
         args: List<String>,
         scannerInputFile: File,
@@ -57,14 +62,25 @@ class DockerScanHelper(
         // 创建容器
         val maxFileSize = maxFileSize(scannerInputFile.length())
         val hostConfig = DockerUtils.dockerHostConfig(binds, maxFileSize, task.scanner.memory)
-        val containerId = dockerClient.createContainer(image, hostConfig, args)
-
+        val containerId = dockerClient.createContainer(
+            image = image,
+            hostConfig = hostConfig,
+            cmd = args,
+            userName = userName,
+            password = password
+        )
         taskContainerIdMap[task.taskId] = containerId
         logger.info(CommonUtils.buildLogMsg(task, "run container instance Id [$containerId]"))
         try {
             // 启动容器
             val result = dockerClient.startContainer(containerId, maxScanDuration)
-            logger.info(CommonUtils.buildLogMsg(task, "task docker run result[$result], [$containerId]"))
+            val containerLogs = getContainerLogs(containerId)
+            logger.info(
+                CommonUtils.buildLogMsg(
+                    task,
+                    "task docker run result[$result], [$containerId], logs:\n $containerLogs"
+                )
+            )
             return result
         } finally {
             taskContainerIdMap.remove(task.taskId)
@@ -85,7 +101,35 @@ class DockerScanHelper(
         return max(scannerExecutorProperties.fileSizeLimit.toBytes(), maxFileSize)
     }
 
+    fun getContainerLogs(containerId: String): String {
+        if (!scannerExecutorProperties.showContainerLogs) {
+            return ""
+        }
+        val logCallback = LogCallback()
+        val result = dockerClient.logContainerCmd(containerId)
+            .withStdOut(true)
+            .withStdErr(true)
+            .withTail(CONTAINER_LOG_LINES)
+            .exec(logCallback)
+            .awaitCompletion(CONTAINER_LOG_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        if (!result) {
+            logger.error("get result failed: $containerId")
+        }
+        return logCallback.content()
+    }
+
+    private class LogCallback : Adapter<Frame>() {
+        private val logs = StringBuilder()
+        override fun onNext(frame: Frame) {
+            logs.appendLine(String(frame.payload).trim())
+        }
+
+        fun content(): String = logs.toString()
+    }
+
     companion object {
         private val logger = LoggerFactory.getLogger(DockerScanHelper::class.java)
+        private const val CONTAINER_LOG_LINES = 50
+        private const val CONTAINER_LOG_TIMEOUT_SECONDS = 5L
     }
 }

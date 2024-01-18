@@ -41,7 +41,6 @@ import com.tencent.bkrepo.common.analysis.pojo.scanner.ScanExecutorResult
 import com.tencent.bkrepo.common.analysis.pojo.scanner.SubScanTaskStatus
 import com.tencent.bkrepo.common.analysis.pojo.scanner.standard.StandardScanExecutorResult
 import com.tencent.bkrepo.common.analysis.pojo.scanner.standard.StandardScanner
-import com.tencent.bkrepo.common.analysis.pojo.scanner.standard.StandardScanner.ArgumentType.STRING
 import com.tencent.bkrepo.common.analysis.pojo.scanner.standard.ToolInput
 import com.tencent.bkrepo.common.analysis.pojo.scanner.standard.ToolOutput
 import com.tencent.bkrepo.common.api.util.toJsonString
@@ -78,7 +77,9 @@ class StandardScanExecutor(
             binds = Binds(Bind(taskWorkDir.absolutePath, Volume(CONTAINER_WORK_DIR))),
             args = args,
             scannerInputFile = scannerInputFile,
-            task = task
+            task = task,
+            userName = scanner.dockerRegistryUsername,
+            password = scanner.dockerRegistryPassword
         )
         return if (result) {
             SubScanTaskStatus.SUCCESS
@@ -117,11 +118,16 @@ class StandardScanExecutor(
     ): File {
         val scanner = task.scanner as StandardScanner
         val inputFile = File(workDir, INPUT_FILE)
-        val args = scanner.args.toMutableList()
-        args.add(StandardScanner.Argument(STRING.name, StandardScanner.ARG_KEY_PKG_TYPE, task.repoType))
+        val args = ToolInput.generateArgs(
+            scanner,
+            task.repoType,
+            scannerInputFile.length(),
+            task.packageKey,
+            task.packageVersion,
+            task.extra
+        )
         val toolInput = ToolInput.create(
-            task.taskId, scanner, task.repoType, scannerInputFile.length(),
-            convertToContainerPath(scannerInputFile.absolutePath, workDir), sha256
+            task.taskId, convertToContainerPath(scannerInputFile.absolutePath, workDir), sha256, args
         )
         inputFile.writeText(toolInput.toJsonString())
         return inputFile
@@ -140,5 +146,4 @@ class StandardScanExecutor(
         private const val OUTPUT_FILE = "output.json"
         private const val CONTAINER_WORK_DIR = "/bkrepo/workspace"
     }
-
 }

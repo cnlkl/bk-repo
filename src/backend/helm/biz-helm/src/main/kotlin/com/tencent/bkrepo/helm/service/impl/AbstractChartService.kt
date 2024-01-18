@@ -60,10 +60,12 @@ import com.tencent.bkrepo.common.lock.service.LockOperation
 import com.tencent.bkrepo.common.query.enums.OperationType
 import com.tencent.bkrepo.common.security.util.SecurityUtils
 import com.tencent.bkrepo.common.service.exception.RemoteErrorCodeException
+import com.tencent.bkrepo.helm.config.HelmProperties
 import com.tencent.bkrepo.helm.constants.CHART
 import com.tencent.bkrepo.helm.constants.CHART_PACKAGE_FILE_EXTENSION
 import com.tencent.bkrepo.helm.constants.FILE_TYPE
 import com.tencent.bkrepo.helm.constants.FULL_PATH
+import com.tencent.bkrepo.helm.constants.HelmMessageCode
 import com.tencent.bkrepo.helm.constants.META_DETAIL
 import com.tencent.bkrepo.helm.constants.NODE_CREATE_DATE
 import com.tencent.bkrepo.helm.constants.NODE_FULL_PATH
@@ -76,8 +78,8 @@ import com.tencent.bkrepo.helm.constants.REPO_NAME
 import com.tencent.bkrepo.helm.constants.REPO_TYPE
 import com.tencent.bkrepo.helm.constants.SIZE
 import com.tencent.bkrepo.helm.constants.TGZ_SUFFIX
-import com.tencent.bkrepo.helm.exception.HelmBadRequestException
 import com.tencent.bkrepo.helm.exception.HelmFileNotFoundException
+import com.tencent.bkrepo.helm.exception.HelmForbiddenRequestException
 import com.tencent.bkrepo.helm.exception.HelmRepoNotFoundException
 import com.tencent.bkrepo.helm.pojo.artifact.HelmArtifactInfo
 import com.tencent.bkrepo.helm.pojo.metadata.HelmChartMetadata
@@ -139,19 +141,25 @@ open class AbstractChartService : ArtifactService() {
     @Autowired
     lateinit var proxyChannelClient: ProxyChannelClient
 
+    @Autowired
+    lateinit var properties: HelmProperties
+
     val threadPoolExecutor: ThreadPoolExecutor = HelmThreadPoolExecutor.instance
 
     fun queryOriginalIndexYaml(): HelmIndexYamlMetadata {
         val context = ArtifactQueryContext()
         context.putAttribute(FULL_PATH, HelmUtils.getIndexCacheYamlFullPath())
         try {
-            val inputStream = ArtifactContextHolder.getRepository().query(context) ?: throw HelmFileNotFoundException(
-                "Error occurred when querying the index.yaml file.. "
-            )
+            val inputStream = ArtifactContextHolder.getRepository().query(context)
+                ?: throw HelmFileNotFoundException(
+                    HelmMessageCode.HELM_FILE_NOT_FOUND, "index.yaml", "${context.projectId}|${context.repoName}"
+                )
             return (inputStream as ArtifactInputStream).use { it.readYamlString() }
         } catch (e: Exception) {
             logger.warn("Error occurred while querying index.yaml, error: ${e.message}")
-            throw HelmFileNotFoundException(e.message.toString())
+            throw HelmFileNotFoundException(
+                HelmMessageCode.HELM_FILE_NOT_FOUND, "index.yaml", "${context.projectId}|${context.repoName}"
+            )
         }
     }
 
@@ -163,11 +171,13 @@ open class AbstractChartService : ArtifactService() {
         val repository = repositoryClient.getRepoDetail(projectId, repoName, RepositoryType.HELM.name).data
             ?: throw RepoNotFoundException("Repository[$repoName] does not exist")
         val inputStream = storageManager.loadArtifactInputStream(nodeDetail, repository.storageCredentials)
-            ?: throw HelmFileNotFoundException("Artifact index.yaml does not exist")
+            ?: throw HelmFileNotFoundException(
+                HelmMessageCode.HELM_FILE_NOT_FOUND, "index.yaml", "$projectId|$repoName"
+            )
         return inputStream.use { it.readYamlString() }
     }
 
-    fun getOriginalIndexNode(projectId: String, repoName: String): NodeDetail? {
+    private fun getOriginalIndexNode(projectId: String, repoName: String): NodeDetail? {
         val fullPath = HelmUtils.getIndexCacheYamlFullPath()
         return nodeClient.getNodeDetail(projectId, repoName, fullPath).data
     }
@@ -202,7 +212,7 @@ open class AbstractChartService : ArtifactService() {
         with(artifactInfo) {
             val result = repositoryClient.getRepoDetail(projectId, repoName, REPO_TYPE).data ?: run {
                 logger.warn("check repository [$repoName] in projectId [$projectId] failed!")
-                throw HelmRepoNotFoundException("repository [$repoName] in projectId [$projectId] not existed.")
+                throw HelmRepoNotFoundException(HelmMessageCode.HELM_REPO_NOT_FOUND, "$projectId|$repoName")
             }
             return result
         }
@@ -229,12 +239,13 @@ open class AbstractChartService : ArtifactService() {
         with(artifactInfo) {
             val repo = repositoryClient.getRepoDetail(projectId, repoName, REPO_TYPE).data ?: run {
                 logger.warn("check repository [$repoName] in projectId [$projectId] failed!")
-                throw HelmRepoNotFoundException("repository [$repoName] in projectId [$projectId] not existed.")
+                throw HelmRepoNotFoundException(HelmMessageCode.HELM_REPO_NOT_FOUND, "$projectId|$repoName")
             }
             when (repo.category) {
-                RepositoryCategory.REMOTE -> throw HelmBadRequestException(
-                    "Unable to upload chart into a remote repository [$projectId/$repoName]"
-                )
+                RepositoryCategory.REMOTE ->
+                    throw HelmForbiddenRequestException(
+                        HelmMessageCode.HELM_FILE_UPLOAD_FORBIDDEN, "$projectId/$repoName"
+                    )
                 else -> return
             }
         }
@@ -284,12 +295,62 @@ open class AbstractChartService : ArtifactService() {
             if (exist) {
                 lastModifyTime?.let { queryModelBuilder.rule(true, NODE_CREATE_DATE, it, OperationType.AFTER) }
             }
-            val result = nodeClient.search(queryModelBuilder.build()).data ?: run {
+            val result = nodeClient.queryWithoutCount(queryModelBuilder.build()).data ?: run {
                 logger.warn("don't find node list in repository: [$projectId/$repoName].")
                 return emptyList()
             }
             return result.records
         }
+    }
+
+    fun regenerateHelmIndexYaml(artifactInfo: HelmArtifactInfo): HelmIndexYamlMetadata {
+        val indexYamlMetadata = HelmUtils.initIndexYamlMetadata()
+        val context = ArtifactQueryContext()
+        var pageNum = 1
+        while (true) {
+            val queryModelBuilder = NodeQueryBuilder()
+                .select(PROJECT_ID, REPO_NAME, NODE_NAME, NODE_FULL_PATH,
+                        NODE_METADATA, NODE_SHA256, NODE_CREATE_DATE)
+                .sortByAsc(NODE_FULL_PATH)
+                .page(pageNum, V2_PAGE_SIZE)
+                .projectId(artifactInfo.projectId)
+                .repoName(artifactInfo.repoName)
+                .fullPath(TGZ_SUFFIX, OperationType.SUFFIX)
+            val result = nodeClient.queryWithoutCount(queryModelBuilder.build()).data
+            if (result == null || result.records.isEmpty()) break
+            result.records.forEach {
+                try {
+                    ChartParserUtil.addIndexEntries(indexYamlMetadata, createChartMetadata(it, context))
+                } catch (ex: HelmFileNotFoundException) {
+                    logger.error(
+                        "generate indexFile for chart [${it[NODE_FULL_PATH]}] in " +
+                            "[${artifactInfo.getRepoIdentify()}] failed, ${ex.message}"
+                    )
+                }
+            }
+            pageNum++
+        }
+        return indexYamlMetadata
+    }
+
+    private fun createChartMetadata(
+        nodeMap: Map<String, Any?>,
+        context: ArtifactQueryContext
+    ): HelmChartMetadata {
+        val chartMetadata = try {
+            HelmMetadataUtils.convertToObject(nodeMap[NODE_METADATA] as Map<String, Any>)
+        } catch (e: Exception) {
+            queryHelmChartMetadata(context, nodeMap[NODE_FULL_PATH] as String)
+        }
+        chartMetadata.urls = listOf(
+            UrlFormatter.format(
+                properties.domain, "${nodeMap[PROJECT_ID]}/${nodeMap[REPO_NAME]}/charts" +
+                "/${chartMetadata.name}-${chartMetadata.version}.tgz"
+            )
+        )
+        chartMetadata.created = convertDateTime(nodeMap[NODE_CREATE_DATE] as String)
+        chartMetadata.digest = nodeMap[NODE_SHA256] as String
+        return chartMetadata
     }
 
     /**
@@ -409,8 +470,12 @@ open class AbstractChartService : ArtifactService() {
     fun <T> lockAction(projectId: String, repoName: String, action: () -> T): T {
         val lockKey = buildRedisKey(projectId, repoName)
         val lock = lockOperation.getLock(lockKey)
-        return if (lockOperation.getSpinLock(lockKey, lock)) {
-            LockOperation.logger.info("Lock for key $lockKey has been acquired.")
+        return if (lockOperation.getSpinLock(
+                lockKey = lockKey, lock = lock,
+                retryTimes = properties.retryTimes,
+                sleepTime = properties.sleepTime
+            )) {
+            logger.info("Lock for key $lockKey has been acquired.")
             try {
                 action()
             } finally {
@@ -531,7 +596,7 @@ open class AbstractChartService : ArtifactService() {
      */
     fun checkRepo(projectId: String, repoName: String): RepositoryDetail? {
         val repoDetail = repositoryClient.getRepoDetail(projectId, repoName, REPO_TYPE).data ?: run {
-            throw HelmRepoNotFoundException("Could not find helm repository named [$repoName] in project [$projectId].")
+            throw HelmRepoNotFoundException(HelmMessageCode.HELM_REPO_NOT_FOUND, "$projectId|$repoName")
         }
         if (RepositoryCategory.LOCAL == repoDetail.category) {
             logger.warn(
@@ -600,7 +665,8 @@ open class AbstractChartService : ArtifactService() {
     companion object {
         val logger: Logger = LoggerFactory.getLogger(AbstractChartService::class.java)
         const val PAGE_NUMBER = 0
-        const val PAGE_SIZE = 100000
+        const val PAGE_SIZE = 200000
+        const val V2_PAGE_SIZE = 20000
 
         fun convertDateTime(timeStr: String): String {
             val localDateTime = LocalDateTime.parse(timeStr, DateTimeFormatter.ISO_DATE_TIME)

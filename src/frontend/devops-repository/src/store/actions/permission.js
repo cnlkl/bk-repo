@@ -46,6 +46,16 @@ export default {
             }
         )
     },
+    getUserRelatedList (_, { asstUser }) {
+        return Vue.prototype.$ajax.get(
+            `${authPrefix}/user/group`,
+            {
+                params: {
+                    asstUser
+                }
+            }
+        )
+    },
     // 查询所有用户
     getRepoUserList ({ commit }) {
         return Vue.prototype.$ajax.get(
@@ -90,7 +100,7 @@ export default {
     // 编辑用户
     editUser (_, { body }) {
         return Vue.prototype.$ajax.put(
-            `${authPrefix}/user/${body.userId}`,
+            `${authPrefix}/user/update/info/${body.userId}`,
             body
         )
     },
@@ -111,7 +121,7 @@ export default {
     // 删除用户
     deleteUser (_, userId) {
         return Vue.prototype.$ajax.delete(
-            `${authPrefix}/user/${userId}`
+            `${authPrefix}/user/delete/${userId}`
         )
     },
     validateEntityUser (_, userId) {
@@ -232,6 +242,63 @@ export default {
                     startTime,
                     endTime,
                     operator: user
+                }
+            }
+        )
+    },
+    getPermissionUrl (_, { body }) {
+        return Vue.prototype.$ajax.post(
+            `${authPrefix}/user/auth/bkiamv3/permission/url`,
+            body
+        )
+    },
+    refreshIamPermission (_, { projectId }) {
+        return Vue.prototype.$ajax.post(
+            `${authPrefix}/user/auth/bkiamv3/project/refresh/${projectId}`
+        )
+    },
+    // 判断蓝鲸权限是否开启
+    getIamPermissionStatus () {
+        return Vue.prototype.$ajax.get(
+            `${authPrefix}/user/auth/bkiamv3/status`
+        )
+    },
+    // 创建项目用户
+    createProjectUser (_, { body }) {
+        return Vue.prototype.$ajax.post(
+            `${authPrefix}/user/create/project`,
+            body
+        )
+    },
+    // 创建repo内权限
+    createPermissionDeployInRepo (_, { body }) {
+        return Vue.prototype.$ajax.post(
+            `${authPrefix}/permission/create`,
+            body
+        )
+    },
+    // 删除repo内权限
+    deletePermission (_, { id }) {
+        return Vue.prototype.$ajax.delete(
+            `${authPrefix}/permission/delete/${id}`
+        )
+    },
+    // 更新repo内权限
+    UpdatePermissionConfigInRepo (_, { body }) {
+        return Vue.prototype.$ajax.put(
+            `${authPrefix}/permission/update/config`,
+            body
+        )
+    },
+    // 获取repo内配置的权限
+    listPermissionDeployInRepo (_, { projectId, repoName }) {
+        return Vue.prototype.$ajax.get(
+            `${authPrefix}/permission/list`,
+            {
+                params: {
+                    projectId: projectId,
+                    repoName: repoName,
+                    resourceType: 'NODE'
                 }
             }
         )

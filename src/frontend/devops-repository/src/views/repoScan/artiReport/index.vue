@@ -1,21 +1,22 @@
 <template>
     <div class="container">
         <artifact-info :scan-types="scanTypes" :subtask-overview="subtaskOverview"></artifact-info>
-        <bk-tab type="unborder-card" style="width: 100%;height: 100%">
+        <bk-tab type="unborder-card" class="arti-tab">
             <bk-tab-panel v-for="(panel, index) in panels" v-bind="panel" :key="index" style="height: 100%">
                 <component
                     @rescan="rescan"
                     :subtask-overview="subtaskOverview"
                     :project-id="projectId"
                     :view-type="viewType"
-                    :is="panel.component" style="height: 100%"></component>
+                    :is="panel.component"
+                    style="height: 100%">
+                </component>
             </bk-tab-panel>
         </bk-tab>
     </div>
 </template>
 <script>
     import {
-        leakLevelEnum,
         SCAN_TYPE_LICENSE,
         SCAN_TYPE_SECURITY,
         SCAN_TYPE_SENSITIVE
@@ -32,9 +33,9 @@
         data () {
             return {
                 allPanels: {
-                    [SCAN_TYPE_SECURITY]: { name: SCAN_TYPE_SECURITY, label: '安全漏洞', count: 10, component: 'leak-component' },
-                    [SCAN_TYPE_LICENSE]: { name: SCAN_TYPE_LICENSE, label: '许可证', count: 10, component: 'license-component' },
-                    [SCAN_TYPE_SENSITIVE]: { name: SCAN_TYPE_SENSITIVE, label: '敏感信息', count: 10, component: 'sensitive-component' }
+                    [SCAN_TYPE_SECURITY]: { name: SCAN_TYPE_SECURITY, label: this.$t('securityVulnerability'), count: 10, component: 'leak-component' },
+                    [SCAN_TYPE_LICENSE]: { name: SCAN_TYPE_LICENSE, label: this.$t('license'), count: 10, component: 'license-component' },
+                    [SCAN_TYPE_SENSITIVE]: { name: SCAN_TYPE_SENSITIVE, label: this.$t('sensitiveInfo'), count: 10, component: 'sensitive-component' }
                 },
                 scanTypes: [],
                 panels: [],
@@ -59,21 +60,17 @@
             }
         },
         created () {
-            this.getScanConfig({ projectId: this.projectId, id: this.planId })
-                .then(res => {
-                    this.scanTypes = res.scanTypes
-                    this.panels = res.scanTypes.map(scanType => this.allPanels[scanType])
-                })
-
             this.artiReportOverview({
                 projectId: this.projectId,
                 recordId: this.recordId,
                 taskId: this.taskId,
                 viewType: this.viewType
             }).then(res => {
+                this.scanTypes = res.scanTypes
+                this.panels = res.scanTypes.map(scanType => this.allPanels[scanType])
                 this.subtaskOverview = {
                     ...res,
-                    highestLeakLevel: leakLevelEnum[res.highestLeakLevel],
+                    highestLeakLevel: this.$t(`leakLevelEnum.${res.highestLeakLevel}`),
                     duration: formatDuration(res.duration / 1000),
                     finishTime: formatDate(res.finishTime)
                 }
@@ -93,7 +90,7 @@
                 }).then(() => {
                     this.$bkMessage({
                         theme: 'success',
-                        message: '已添加到扫描队列'
+                        message: this.$t('scanArtMsg')
                     })
                     this.back()
                 })
@@ -105,8 +102,8 @@
                 const { scanType, scanName } = this.$route.query
                 this.$router.push({
                     name: 'scanReport',
-                    params: { projectId: this.projectId, planId: this.planId },
-                    query: { viewType: this.viewType, scanType: scanType, scanName: scanName }
+                    params: { ...this.$route.params, projectId: this.projectId, planId: this.planId },
+                    query: { ...this.$route.query, viewType: this.viewType, scanType: scanType, scanName: scanName }
                 })
             },
             backToRepo () {
@@ -114,13 +111,14 @@
                 this.$router.push({
                     name: this.subtaskOverview.packageKey ? 'commonPackage' : 'repoGeneric',
                     params: {
+                        ...this.$route.params,
                         projectId: this.projectId,
-                        repoType: this.subtaskOverview.repoType
+                        repoType: this.subtaskOverview.repoType?.toLowerCase()
                     },
                     query: (
                         this.subtaskOverview.packageKey
-                            ? { repoName: this.subtaskOverview.repoName, packageKey, version }
-                            : { repoName: this.subtaskOverview.repoName, path }
+                            ? { ...this.$route.query, repoName: this.subtaskOverview.repoName, packageKey, version }
+                            : { ...this.$route.query, repoName: this.subtaskOverview.repoName, path }
                     )
                 })
             }
@@ -139,6 +137,10 @@
     ::v-deep .bk-tab-section {
         height: 100%;
         padding-right: 0;
+    }
+    .arti-tab{
+        width: calc(100% - 334px);
+        height: 100%;
     }
 }
 </style>

@@ -11,7 +11,6 @@ import com.tencent.bkrepo.repository.model.TRepository
 import com.tencent.bkrepo.repository.pojo.repo.RepositoryInfo
 import com.tencent.bkrepo.repository.service.repo.SoftwareRepositoryService
 import org.springframework.data.domain.Sort
-import org.springframework.data.mongodb.core.query.Criteria
 import org.springframework.data.mongodb.core.query.Query
 import org.springframework.data.mongodb.core.query.and
 import org.springframework.data.mongodb.core.query.isEqualTo
@@ -59,7 +58,7 @@ class SoftwareRepositoryServiceImpl(
     ): Query {
         val publicCriteria = where(TRepository::public).`is`(true)
         val systemCriteria = where(TRepository::configuration).regex("\\\"system\\\"( )?:( )?true")
-        val criteria = Criteria()
+        val criteria = where(TRepository::deleted).isEqualTo(null)
         if (projectId != null && projectId.isNotBlank()) {
             criteria.and(TRepository::projectId).`is`(projectId)
         } else {
@@ -68,7 +67,7 @@ class SoftwareRepositoryServiceImpl(
         criteria.and(TRepository::display).ne(false)
         criteria.and(TRepository::category).`is`(RepositoryCategory.LOCAL)
         if (repoType == null && !includeGeneric) criteria.and(TRepository::type)
-            .`in`(RepositoryType.HELM, RepositoryType.RDS)
+            .`in`(RepositoryType.HELM)
         if (repoType != null) {
             criteria.and(TRepository::type).isEqualTo(repoType)
         }
@@ -94,7 +93,8 @@ class SoftwareRepositoryServiceImpl(
                     lastModifiedBy = it.lastModifiedBy,
                     lastModifiedDate = it.lastModifiedDate.format(DateTimeFormatter.ISO_DATE_TIME),
                     quota = it.quota,
-                    used = it.used
+                    used = it.used,
+                    display = it.display
                 )
             }
         }

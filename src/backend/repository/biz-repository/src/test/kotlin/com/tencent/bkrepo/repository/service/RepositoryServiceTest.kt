@@ -73,6 +73,7 @@ import org.junit.jupiter.api.assertThrows
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.data.mongo.DataMongoTest
 import org.springframework.boot.test.mock.mockito.MockBean
+import java.time.Duration
 
 @DisplayName("仓库服务测试")
 @DataMongoTest
@@ -93,14 +94,20 @@ class RepositoryServiceTest @Autowired constructor(
         path = "test"
         cache.enabled = true
         cache.path = "cache-test"
-        cache.expireDays = 10
+        cache.expireDuration = Duration.ofHours(10)
     }
 
     @BeforeAll
     fun beforeAll() {
         initMock()
         if (!projectService.checkExist(UT_PROJECT_ID)) {
-            val projectCreateRequest = ProjectCreateRequest(UT_PROJECT_ID, UT_REPO_NAME, UT_REPO_DISPLAY, UT_USER)
+            val projectCreateRequest = ProjectCreateRequest(
+                name = UT_PROJECT_ID,
+                displayName = UT_REPO_NAME,
+                description = UT_REPO_DISPLAY,
+                createPermission = true,
+                operator = UT_USER
+            )
             projectService.createProject(projectCreateRequest)
         }
         val request = StorageCredentialsCreateRequest(UT_STORAGE_CREDENTIALS_KEY, storageCredentials, UT_REGION)
@@ -112,6 +119,7 @@ class RepositoryServiceTest @Autowired constructor(
         repositoryService.listRepo(UT_PROJECT_ID).forEach {
             repositoryService.deleteRepo(RepoDeleteRequest(UT_PROJECT_ID, it.name, operator = UT_USER))
         }
+        repositoryProperties.defaultStorageCredentialsKey = null
     }
 
     @Test
@@ -193,10 +201,11 @@ class RepositoryServiceTest @Autowired constructor(
     @Test
     @DisplayName("测试使用指定storage key创建仓库")
     fun `test create with specific storage key`() {
-        val request = createRequest(storageCredentialsKey = UT_STORAGE_CREDENTIALS_KEY)
+        val request = createRequest("repo-specific-storage-key", UT_STORAGE_CREDENTIALS_KEY)
         repositoryService.createRepo(request)
-        val repository = repositoryService.getRepoDetail(UT_PROJECT_ID, UT_REPO_NAME, RepositoryType.GENERIC.name)!!
-        assertEquals(UT_REPO_NAME, repository.name)
+        val repository =
+            repositoryService.getRepoDetail(UT_PROJECT_ID, "repo-specific-storage-key", RepositoryType.GENERIC.name)!!
+        assertEquals("repo-specific-storage-key", repository.name)
         assertEquals(RepositoryType.GENERIC, repository.type)
         assertEquals(RepositoryCategory.LOCAL, repository.category)
         assertEquals(true, repository.public)
@@ -205,7 +214,7 @@ class RepositoryServiceTest @Autowired constructor(
         assertEquals(storageCredentials, repository.storageCredentials)
         assertEquals(UT_STORAGE_CREDENTIALS_KEY, repository.storageCredentials!!.key)
 
-        assertThrows<ErrorCodeException> { repositoryService.createRepo(createRequest()) }
+        assertThrows<ErrorCodeException> { repositoryService.createRepo(createRequest("repo-specific-storage-key")) }
     }
 
     @Test
@@ -221,8 +230,9 @@ class RepositoryServiceTest @Autowired constructor(
     @DisplayName("测试使用默认storage key创建仓库")
     fun `test create with default storage key`() {
         repositoryProperties.defaultStorageCredentialsKey = UT_STORAGE_CREDENTIALS_KEY
-        repositoryService.createRepo(createRequest())
-        val repository = repositoryService.getRepoDetail(UT_PROJECT_ID, UT_REPO_NAME, RepositoryType.GENERIC.name)!!
+        repositoryService.createRepo(createRequest("repo-default-storage-key"))
+        val repository =
+            repositoryService.getRepoDetail(UT_PROJECT_ID, "repo-default-storage-key", RepositoryType.GENERIC.name)!!
         val dbCredential = repository.storageCredentials
         assertEquals(storageCredentials, dbCredential)
     }
@@ -230,7 +240,7 @@ class RepositoryServiceTest @Autowired constructor(
     @Test
     @DisplayName("测试使用不存在的storage key创建仓库")
     fun `should throw exception when storage key nonexistent`() {
-        val request = createRequest(storageCredentialsKey = "non-exist-credentials-key")
+        val request = createRequest("repo-non-exist-credentials-key", "non-exist-credentials-key")
         assertThrows<ErrorCodeException> { repositoryService.createRepo(request) }
     }
 

@@ -3,12 +3,12 @@
         v-model="show"
         width="540"
         height-num="245"
-        title="创建访问令牌"
+        :title="$t('createAccessToken')"
         @cancel="cancel">
         <div v-if="token" class="flex-align-center">
             <i class="flex-center devops-icon icon-check-1"></i>
-            <div>
-                <span class="token-title">{{ $t('create') + $t('success') }}</span>
+            <div style="width: 400px">
+                <span class="token-title">{{ $t('create') + $t('space') + $t('success') }}</span>
                 <div @click="copyToken(token)" class="mt10 mb10 hover-btn flex-align-center">
                     {{ $t('tokenIs') + token }}
                     <i class="ml10 devops-icon icon-clipboard"></i>
@@ -20,14 +20,14 @@
             <bk-form-item :label="$t('name')" :required="true" property="name" error-display-type="normal">
                 <bk-input v-model.trim="tokenFormData.name" maxlength="32" show-word-limit></bk-input>
             </bk-form-item>
-            <bk-form-item :label="$t('expiress')" property="expiredAt">
+            <bk-form-item :label="$t('expireOn')" property="expiredAt">
                 <bk-date-picker
                     style="width:100%"
                     v-model="tokenFormData.expiredAt"
                     :options="{
                         disabledDate: (date) => date < new Date()
                     }"
-                    :placeholder="$t('tokenExpiressTip')">
+                    :placeholder="$t('tokenExpireTip')">
                 </bk-date-picker>
             </bk-form-item>
         </bk-form>
@@ -49,6 +49,7 @@
             return {
                 show: false,
                 loading: false,
+                userName: '',
                 tokenFormData: {
                     name: '',
                     expiredAt: ''
@@ -57,7 +58,7 @@
                     name: [
                         {
                             required: true,
-                            message: this.$t('pleaseInput') + 'Token' + this.$t('name'),
+                            message: this.$t('pleaseInput') + this.$t('space') + 'Token' + this.$t('space') + this.$t('name'),
                             trigger: 'blur'
                         }
                     ]
@@ -84,7 +85,7 @@
                 this.loading = true
                 this.addToken({
                     projectId: this.$route.params.projectId,
-                    username: this.userInfo.username,
+                    username: this.userName,
                     name: this.tokenFormData.name,
                     expiredAt: this.tokenFormData.expiredAt instanceof Date ? this.tokenFormData.expiredAt.toISOString() : ''
                 }).then(({ id }) => {
@@ -104,12 +105,12 @@
                 copyToClipboard(text).then(() => {
                     this.$bkMessage({
                         theme: 'success',
-                        message: this.$t('copy') + this.$t('success')
+                        message: this.$t('copy') + this.$t('space') + this.$t('success')
                     })
                 }).catch(() => {
                     this.$bkMessage({
                         theme: 'error',
-                        message: this.$t('copy') + this.$t('fail')
+                        message: this.$t('copy') + this.$t('space') + this.$t('fail')
                     })
                 })
             }
@@ -118,14 +119,15 @@
 </script>
 <style lang="scss" scoped>
 .icon-check-1 {
-    width: 58px;
+    width: 58px !important;
     height: 58px;
-    margin: 0 auto;
     line-height: 58px;
     font-size: 30px;
     color: white;
     border-radius: 50%;
     background-color: var(--successColor);
+    margin-left: 10px;
+    margin-right: 10px;
 }
 .token-title {
     font-size: 17px;

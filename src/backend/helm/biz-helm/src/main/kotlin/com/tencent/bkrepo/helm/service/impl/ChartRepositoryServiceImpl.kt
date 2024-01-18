@@ -45,6 +45,7 @@ import com.tencent.bkrepo.helm.constants.CHART
 import com.tencent.bkrepo.helm.constants.CHART_PACKAGE_FILE_EXTENSION
 import com.tencent.bkrepo.helm.constants.FILE_TYPE
 import com.tencent.bkrepo.helm.constants.FULL_PATH
+import com.tencent.bkrepo.helm.constants.HelmMessageCode
 import com.tencent.bkrepo.helm.constants.INDEX_YAML
 import com.tencent.bkrepo.helm.constants.NODE_CREATE_DATE
 import com.tencent.bkrepo.helm.constants.NODE_FULL_PATH
@@ -104,7 +105,9 @@ class ChartRepositoryServiceImpl(
             ArtifactContextHolder.getRepository().download(context)
         } catch (e: Exception) {
             logger.warn("Error occurred while downloading index.yaml, error: ${e.message}")
-            throw HelmFileNotFoundException(e.message.toString())
+            throw HelmFileNotFoundException(
+                HelmMessageCode.HELM_FILE_NOT_FOUND, "index.yaml", "${context.projectId}|${context.repoName}"
+            )
         }
     }
 
@@ -211,7 +214,9 @@ class ChartRepositoryServiceImpl(
             throw e
         } catch (e: Exception) {
             logger.warn("Error occurred while installing chart, error: ${e.message}")
-            throw HelmFileNotFoundException(e.message.toString())
+            throw HelmFileNotFoundException(
+                HelmMessageCode.HELM_FILE_NOT_FOUND, artifactInfo.getArtifactFullPath(), artifactInfo.getRepoIdentify()
+            )
         }
     }
 
@@ -224,31 +229,16 @@ class ChartRepositoryServiceImpl(
             ArtifactContextHolder.getRepository().download(context)
         } catch (e: Exception) {
             logger.warn("Error occurred while installing prov, error: ${e.message}")
-            throw HelmFileNotFoundException(e.message.toString())
+            throw HelmFileNotFoundException(
+                HelmMessageCode.HELM_FILE_NOT_FOUND, artifactInfo.getArtifactFullPath(), artifactInfo.getRepoIdentify()
+            )
         }
     }
 
     @Permission(ResourceType.REPO, PermissionAction.READ)
     @Transactional(rollbackFor = [Throwable::class])
-    override fun regenerateIndexYaml(artifactInfo: HelmArtifactInfo) {
-        when (getRepositoryInfo(artifactInfo).category) {
-            RepositoryCategory.REMOTE -> {
-                helmOperationService.initPackageInfo(
-                    projectId = artifactInfo.projectId,
-                    repoName = artifactInfo.repoName,
-                    userId = SecurityUtils.getUserId()
-                )
-            }
-            else -> {
-                val nodeList = queryNodeList(artifactInfo, false)
-                logger.info(
-                    "query node list for full refresh index.yaml success in repo [${artifactInfo.getRepoIdentify()}]" +
-                        ", size [${nodeList.size}], starting full refresh index.yaml ... "
-                )
-                val indexYamlMetadata = buildIndexYamlMetadata(nodeList, artifactInfo, true)
-                uploadIndexYamlMetadata(indexYamlMetadata).also { logger.info("Full refresh index.yaml success！") }
-            }
-        }
+    override fun regenerateIndexYaml(artifactInfo: HelmArtifactInfo, v1Flag: Boolean) {
+        regenerateIndex(artifactInfo, v1Flag)
     }
 
     @Permission(ResourceType.REPO, PermissionAction.WRITE)
@@ -264,8 +254,38 @@ class ChartRepositoryServiceImpl(
     override fun batchInstallTgz(artifactInfo: HelmArtifactInfo, startTime: LocalDateTime) {
         val context = ArtifactQueryContext()
         when (context.repositoryDetail.category) {
-            RepositoryCategory.REMOTE -> throw HelmBadRequestException("illegal request")
+            RepositoryCategory.REMOTE -> throw HelmBadRequestException(
+                HelmMessageCode.HELM_ILLEGAL_REQUEST,
+                emptyList<String>()
+            )
             else -> batchInstallLocalTgz(artifactInfo, startTime)
+        }
+    }
+
+    private fun regenerateIndex(artifactInfo: HelmArtifactInfo, v1Flag: Boolean = true) {
+        when (getRepositoryInfo(artifactInfo).category) {
+            RepositoryCategory.REMOTE -> {
+                helmOperationService.initPackageInfo(
+                    projectId = artifactInfo.projectId,
+                    repoName = artifactInfo.repoName,
+                    userId = SecurityUtils.getUserId()
+                )
+            }
+            else -> {
+                val indexYamlMetadata = if (v1Flag) {
+                    val nodeList = queryNodeList(artifactInfo, false)
+                    logger.info(
+                        "query node list for full refresh index.yaml success " +
+                            "in repo [${artifactInfo.getRepoIdentify()}], size [${nodeList.size}]," +
+                            " starting full refresh index.yaml ... "
+                    )
+                    buildIndexYamlMetadata(nodeList, artifactInfo, true)
+                } else {
+                    logger.info("Use v2 version to regenerate index")
+                    regenerateHelmIndexYaml(artifactInfo)
+                }
+                uploadIndexYamlMetadata(indexYamlMetadata).also { logger.info("Full refresh index.yaml success！") }
+            }
         }
     }
 
@@ -273,7 +293,7 @@ class ChartRepositoryServiceImpl(
         val nodeList = queryNodeList(artifactInfo, lastModifyTime = startTime)
         if (nodeList.isEmpty()) {
             throw HelmFileNotFoundException(
-                "no chart found in repository [${artifactInfo.getRepoIdentify()}]"
+                HelmMessageCode.HELM_FILE_NOT_FOUND, "chart", artifactInfo.getRepoIdentify()
             )
         }
         val context = ArtifactQueryContext()

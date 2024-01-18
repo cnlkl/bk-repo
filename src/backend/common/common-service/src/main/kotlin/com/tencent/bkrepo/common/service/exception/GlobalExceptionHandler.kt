@@ -34,17 +34,21 @@ package com.tencent.bkrepo.common.service.exception
 import com.fasterxml.jackson.module.kotlin.MissingKotlinParameterException
 import com.tencent.bkrepo.common.api.constant.HttpStatus
 import com.tencent.bkrepo.common.api.exception.ErrorCodeException
+import com.tencent.bkrepo.common.api.exception.TooManyRequestsException
 import com.tencent.bkrepo.common.api.message.CommonMessageCode
 import com.tencent.bkrepo.common.api.pojo.Response
 import org.springframework.core.Ordered
 import org.springframework.core.annotation.Order
 import org.springframework.http.converter.HttpMessageNotReadableException
+import org.springframework.web.HttpMediaTypeNotAcceptableException
 import org.springframework.web.HttpMediaTypeNotSupportedException
 import org.springframework.web.HttpRequestMethodNotSupportedException
 import org.springframework.web.bind.MissingRequestHeaderException
 import org.springframework.web.bind.MissingServletRequestParameterException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import org.springframework.web.context.request.async.AsyncRequestTimeoutException
+import org.springframework.web.context.request.async.DeferredResult
 
 /**
  * 全局统一异常处理
@@ -112,6 +116,31 @@ class GlobalExceptionHandler : AbstractExceptionHandler() {
             messageCode = CommonMessageCode.MEDIA_TYPE_UNSUPPORTED
         )
         return response(errorCodeException)
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotAcceptableException::class)
+    fun handleException(exception: HttpMediaTypeNotAcceptableException): Response<Void> {
+        val errorCodeException = ErrorCodeException(
+            status = HttpStatus.NOT_ACCEPTABLE,
+            messageCode = CommonMessageCode.MEDIA_TYPE_UNACCEPTABLE
+        )
+        return response(errorCodeException)
+    }
+
+    @ExceptionHandler(AsyncRequestTimeoutException::class)
+    fun handleException(exception: AsyncRequestTimeoutException): DeferredResult<Response<Void>> {
+        val errorCodeException = ErrorCodeException(
+            status = HttpStatus.NOT_MODIFIED,
+            messageCode = CommonMessageCode.RESOURCE_EXPIRED
+        )
+        val deferredResult = DeferredResult<Response<Void>>()
+        deferredResult.setResult(response(errorCodeException))
+        return deferredResult
+    }
+
+    @ExceptionHandler(TooManyRequestsException::class)
+    fun handleException(exception: TooManyRequestsException): Response<Void> {
+        return response(exception)
     }
 
     @ExceptionHandler(Exception::class)

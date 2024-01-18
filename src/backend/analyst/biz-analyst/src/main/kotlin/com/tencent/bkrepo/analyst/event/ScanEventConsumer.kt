@@ -27,6 +27,19 @@
 
 package com.tencent.bkrepo.analyst.event
 
+import com.tencent.bkrepo.analyst.dao.ScanPlanDao
+import com.tencent.bkrepo.analyst.pojo.AutoScanConfiguration
+import com.tencent.bkrepo.analyst.pojo.ScanTriggerType
+import com.tencent.bkrepo.analyst.pojo.TaskMetadata
+import com.tencent.bkrepo.analyst.pojo.request.ScanRequest
+import com.tencent.bkrepo.analyst.pojo.rule.RuleArtifact
+import com.tencent.bkrepo.analyst.pojo.rule.RuleArtifact.Companion.RULE_FIELD_LATEST_VERSION
+import com.tencent.bkrepo.analyst.service.ProjectScanConfigurationService
+import com.tencent.bkrepo.analyst.service.ScanService
+import com.tencent.bkrepo.analyst.service.ScannerService
+import com.tencent.bkrepo.analyst.service.SpdxLicenseService
+import com.tencent.bkrepo.analyst.utils.RuleConverter
+import com.tencent.bkrepo.common.analysis.pojo.scanner.Scanner
 import com.tencent.bkrepo.common.api.constant.CharPool
 import com.tencent.bkrepo.common.api.util.readJsonString
 import com.tencent.bkrepo.common.artifact.constant.PUBLIC_GLOBAL_PROJECT
@@ -37,17 +50,9 @@ import com.tencent.bkrepo.common.artifact.event.packages.VersionCreatedEvent
 import com.tencent.bkrepo.common.artifact.pojo.RepositoryType
 import com.tencent.bkrepo.common.query.matcher.RuleMatcher
 import com.tencent.bkrepo.common.query.model.Rule
+import com.tencent.bkrepo.repository.constant.SYSTEM_USER
 import com.tencent.bkrepo.repository.pojo.node.NodeDetail
 import com.tencent.bkrepo.repository.pojo.packages.PackageSummary
-import com.tencent.bkrepo.analyst.dao.ProjectScanConfigurationDao
-import com.tencent.bkrepo.analyst.dao.ScanPlanDao
-import com.tencent.bkrepo.analyst.pojo.ScanTriggerType
-import com.tencent.bkrepo.analyst.pojo.request.ScanRequest
-import com.tencent.bkrepo.analyst.pojo.rule.RuleArtifact
-import com.tencent.bkrepo.analyst.service.ScanService
-import com.tencent.bkrepo.analyst.service.ScannerService
-import com.tencent.bkrepo.analyst.service.SpdxLicenseService
-import com.tencent.bkrepo.analyst.utils.RuleConverter
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor
 import org.springframework.stereotype.Component
@@ -64,7 +69,7 @@ class ScanEventConsumer(
     private val scanService: ScanService,
     private val scannerService: ScannerService,
     private val scanPlanDao: ScanPlanDao,
-    private val projectScanConfigurationDao: ProjectScanConfigurationDao,
+    private val projectScanConfigurationService: ProjectScanConfigurationService,
     private val executor: ThreadPoolTaskExecutor
 ) : Consumer<ArtifactEvent> {
 
@@ -195,14 +200,15 @@ class ScanEventConsumer(
      */
     private fun scanIfHasProjectConfiguration(event: ArtifactEvent) {
         with(event) {
-            val projectScanConfiguration = projectScanConfigurationDao.findByProjectId(event.projectId) ?: return
-            for (entry in projectScanConfiguration.autoScanConfiguration.entries) {
+            val autoScanConfiguration = projectScanConfigurationService
+                .findProjectOrGlobalScanConfiguration(event.projectId)
+                ?.autoScanConfiguration
+                ?: return
+            for (entry in autoScanConfiguration.entries) {
                 val scanner = entry.key
                 val configuration = entry.value
 
-                if (configuration.autoScanRepoNames.isNotEmpty() && repoName !in configuration.autoScanRepoNames ||
-                    !match(event, configuration.autoScanMatchRule)
-                ) {
+                if (!couldApplied(configuration, scanner, event)) {
                     continue
                 }
 
@@ -213,10 +219,23 @@ class ScanEventConsumer(
                     val packageVersion = data[VersionCreatedEvent::packageVersion.name] as String
                     RuleConverter.convert(projectId, repoName, packageKey, packageVersion)
                 }
-                val request = ScanRequest(scanner = scanner, rule = rule)
-                scanService.scan(request, ScanTriggerType.ON_NEW_ARTIFACT_SYSTEM)
+                val request = ScanRequest(
+                    scanner = scanner,
+                    rule = rule,
+                    metadata = listOf(TaskMetadata(TaskMetadata.TASK_METADATA_GLOBAL, "true"))
+                )
+                scanService.scan(request, ScanTriggerType.ON_NEW_ARTIFACT_SYSTEM, SYSTEM_USER)
             }
         }
+    }
+
+    /**
+     * 判断是否能应用配置
+     */
+    private fun couldApplied(configuration: AutoScanConfiguration, scannerName: String, event: ArtifactEvent): Boolean {
+        return (configuration.autoScanRepoNames.isEmpty() || event.repoName in configuration.autoScanRepoNames)
+            && match(event, configuration.autoScanMatchRule?.readJsonString<Rule>())
+            && supportedEvent(scannerService.get(scannerName), event)
     }
 
     /**
@@ -240,18 +259,32 @@ class ScanEventConsumer(
             }
 
             if ((event.type == EventType.VERSION_CREATED || event.type == EventType.VERSION_UPDATED)) {
-                val valuesToMatch = mapOf(
+                val valuesToMatch = mapOf<String, Any>(
                     PackageSummary::projectId.name to projectId,
                     PackageSummary::repoName.name to repoName,
                     PackageSummary::type.name to data[VersionCreatedEvent::packageType.name] as String,
                     RuleArtifact::name.name to data[VersionCreatedEvent::packageName.name] as String,
-                    RuleArtifact::version.name to data[VersionCreatedEvent::packageVersion.name] as String
+                    RuleArtifact::version.name to data[VersionCreatedEvent::packageVersion.name] as String,
+                    // 默认当前正在创建的是最新版本
+                    RULE_FIELD_LATEST_VERSION to true
                 )
                 return RuleMatcher.match(rule, valuesToMatch)
             }
         }
 
         return false
+    }
+
+    /**
+     * 判断是否为扫描器支持处理的事件
+     */
+    private fun supportedEvent(scanner: Scanner, event: ArtifactEvent): Boolean {
+        val supportPkgTypes = scanner.supportPackageTypes
+        return when (event.type) {
+            EventType.NODE_CREATED -> RepositoryType.GENERIC.name in supportPkgTypes
+            EventType.VERSION_CREATED -> event.data[VersionCreatedEvent::packageType.name] in supportPkgTypes
+            else -> false
+        }
     }
 
     companion object {

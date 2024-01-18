@@ -30,22 +30,23 @@
                 <QRCode class="share-qrcode" :text="shareUrl" :size="150" />
             </div>
         </div> -->
-        <bk-form style="margin-top:-15px" ref="genericShareForm" :label-width="90" form-type="vertical">
-            <bk-form-item label="授权用户">
+        <bk-form style="margin-top:-15px" ref="genericShareForm" :label-width="360" form-type="vertical">
+            <bk-form-item :label="$t('authorizedUser')">
                 <bk-tag-input
                     v-model="genericShare.user"
                     :list="Object.values(userList).filter(user => user.id !== 'anonymous')"
                     :search-key="['id', 'name']"
-                    placeholder="授权访问用户，为空则任意用户可访问，按Enter键确认"
+                    :placeholder="$t('sharePlaceHolder')"
                     trigger="focus"
                     allow-create
+                    :paste-fn="parseFn"
                     has-delete-icon>
                 </bk-tag-input>
             </bk-form-item>
-            <bk-form-item label="授权IP">
+            <bk-form-item :label="$t('authorizedIp')">
                 <bk-tag-input
                     v-model="genericShare.ip"
-                    placeholder="授权访问IP，为空则任意IP可访问，按Enter键确认"
+                    :placeholder="$t('sharePlaceHolder1')"
                     trigger="focus"
                     :create-tag-validator="tag => {
                         return /((2(5[0-5]|[0-4]\d))|[0-1]?\d{1,2})(\.((2(5[0-5]|[0-4]\d))|[0-1]?\d{1,2})){3}/g.test(tag)
@@ -53,18 +54,18 @@
                     allow-create>
                 </bk-tag-input>
             </bk-form-item>
-            <bk-form-item label="访问次数">
-                <bk-input v-model="genericShare.permits" placeholder="请输入访问次数，为空则不限制"></bk-input>
+            <bk-form-item :label="$t('visits')">
+                <bk-input v-model="genericShare.permits" :placeholder="$t('sharePlaceHolder2')"></bk-input>
             </bk-form-item>
-            <bk-form-item :label="`${$t('validity')}(${$t('day')})`">
+            <bk-form-item :label="$t('validity')">
                 <bk-select
                     v-model="genericShare.time"
                     :clearable="false"
-                    placeholder="请选择过期时间">
+                    :placeholder="$t('sharePlaceHolder3')">
                     <bk-option :id="1" name="1"></bk-option>
                     <bk-option :id="7" name="7"></bk-option>
                     <bk-option :id="30" name="30"></bk-option>
-                    <bk-option :id="0" name="永久"></bk-option>
+                    <bk-option :id="0" :name="$t('permanent')"></bk-option>
                 </bk-select>
             </bk-form-item>
         </bk-form>
@@ -72,15 +73,18 @@
             <bk-button v-if="!shareUrl" theme="default" @click="cancel">{{ $t('cancel') }}</bk-button>
             <bk-button class="ml10" :loading="genericShare.loading" theme="primary" @click="shareUrl ? cancel() : submit()">{{$t('confirm')}}</bk-button>
         </template>
+        <iam-deny-dialog :visible.sync="showIamDenyDialog" :show-data="showData"></iam-deny-dialog>
     </canway-dialog>
 </template>
 <script>
-    // import QRCode from '@repository/components/QRCode'
+// import QRCode from '@repository/components/QRCode'
+    import iamDenyDialog from '@repository/components/IamDenyDialog/IamDenyDialog'
     import { mapActions, mapState } from 'vuex'
     import { copyToClipboard } from '@repository/utils'
     export default {
         name: 'genericShare',
         // components: { QRCode },
+        components: { iamDenyDialog },
         data () {
             return {
                 shareUrl: '',
@@ -96,14 +100,26 @@
                     ip: [],
                     permits: '',
                     time: 0
-                }
+                },
+                showIamDenyDialog: false,
+                showData: {}
             }
         },
         computed: {
-            ...mapState(['userList'])
+            ...mapState(['userList', 'userInfo'])
         },
         methods: {
-            ...mapActions(['shareArtifactory', 'sendEmail']),
+            ...mapActions(['shareArtifactory', 'sendEmail', 'getPermissionUrl']),
+            parseFn (data) {
+                if (data !== '') {
+                    const users = data.toString().split(',')
+                    for (let i = 0; i < users.length; i++) {
+                        users[i] = users[i].toString().trim()
+                    }
+                    const newUser = this.genericShare.user.concat(users)
+                    this.genericShare.user = Array.from(new Set(newUser))
+                }
+            },
             setData (data) {
                 this.genericShare = {
                     ...this.genericShare,
@@ -139,9 +155,43 @@
                     // this.shareUrl = url
                     this.$bkMessage({
                         theme: 'success',
-                        message: '共享成功'
+                        message: this.$t('share') + this.$t('space') + this.$t('success')
                     })
                     this.cancel()
+                }).catch(e => {
+                    if (e.status === 403) {
+                        this.getPermissionUrl({
+                            body: {
+                                projectId: projectId,
+                                action: 'READ',
+                                resourceType: 'NODE',
+                                uid: this.userInfo.name,
+                                path: path,
+                                repoName: repoName
+                            }
+                        }).then(res => {
+                            if (res !== '') {
+                                this.showIamDenyDialog = true
+                                this.showData = {
+                                    projectId: projectId,
+                                    repoName: repoName,
+                                    action: 'READ',
+                                    path: path,
+                                    url: res
+                                }
+                            } else {
+                                this.$bkMessage({
+                                    theme: 'error',
+                                    message: e.message
+                                })
+                            }
+                        })
+                    } else {
+                        this.$bkMessage({
+                            theme: 'error',
+                            message: e.message
+                        })
+                    }
                 }).finally(() => {
                     this.genericShare.loading = false
                 })
@@ -150,12 +200,12 @@
                 copyToClipboard(text).then(() => {
                     this.$bkMessage({
                         theme: 'success',
-                        message: this.$t('copy') + this.$t('success')
+                        message: this.$t('copy') + this.$t('space') + this.$t('success')
                     })
                 }).catch(() => {
                     this.$bkMessage({
                         theme: 'error',
-                        message: this.$t('copy') + this.$t('fail')
+                        message: this.$t('copy') + this.$t('space') + this.$t('fail')
                     })
                 })
             },

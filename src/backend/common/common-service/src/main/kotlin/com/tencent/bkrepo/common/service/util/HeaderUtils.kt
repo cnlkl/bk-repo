@@ -39,8 +39,12 @@ import java.net.URLDecoder
 
 object HeaderUtils {
 
+    fun getHeaderNames(): List<String>? {
+        return request()?.headerNames?.toList()
+    }
+
     fun getHeader(name: String): String? {
-        return request().getHeader(name)
+        return request()?.getHeader(name)
     }
 
     fun getLongHeader(name: String): Long {
@@ -61,5 +65,5 @@ object HeaderUtils {
         }
     }
 
-    private fun request() = (RequestContextHolder.getRequestAttributes() as ServletRequestAttributes).request
+    private fun request() = (RequestContextHolder.getRequestAttributes() as? ServletRequestAttributes)?.request
 }

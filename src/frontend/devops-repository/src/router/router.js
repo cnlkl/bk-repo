@@ -12,7 +12,6 @@ const projectManage = () => import('@repository/views/projectManage')
 const projectConfig = () => import('@repository/views/projectManage/projectConfig')
 const nodeManage = () => import('@repository/views/nodeManage')
 const planManage = () => import('@repository/views/planManage')
-const createPlan = () => import('@repository/views/planManage/createPlan')
 const logDetail = () => import('@repository/views/planManage/logDetail')
 
 const repoScan = () => import('@repository/views/repoScan')
@@ -30,6 +29,10 @@ const commonPackageDetail = () => import('@repository/views/repoCommon/commonPac
 
 const repoSearch = () => import('@repository/views/repoSearch')
 
+const WebError440 = () => import('@repository/components/Exception/440')
+
+const oauth = () => import('@repository/views/oauth')
+
 const routes = [
     {
         path: '/ui/:projectId/preview',
@@ -42,19 +45,28 @@ const routes = [
         ]
     },
     {
+        path: '/ui/:projectId/oauth/authorize',
+        component: oauth
+    },
+    {
         path: '/ui/:projectId',
         component: repoHome,
-        redirect: { name: 'repoList' },
+        redirect: { name: 'repositories' },
         children: [
             {
                 path: 'repoList',
-                name: 'repoList',
+                name: 'repositories',
                 component: repoList,
                 meta: {
                     breadcrumb: [
-                        { name: 'repoList', label: '仓库列表' }
+                        { to: 'repositories', name: 'browser', label: '仓库列表' }
                     ]
                 }
+            },
+            {
+                path: '440/:msg',
+                name: '440',
+                component: WebError440
             },
             {
                 path: 'repoConfig/:repoType',
@@ -62,7 +74,7 @@ const routes = [
                 component: repoConfig,
                 meta: {
                     breadcrumb: [
-                        { name: 'repoList', label: '仓库列表' },
+                        { to: 'repositories', name: 'browser', label: '仓库列表' },
                         { name: 'repoConfig', label: '仓库配置' }
                     ]
                 }
@@ -103,7 +115,7 @@ const routes = [
                 component: repoToken,
                 meta: {
                     breadcrumb: [
-                        { name: 'repoToken', label: '访问令牌' }
+                        { name: 'repoToken', label: '个人令牌' }
                     ]
                 }
             },
@@ -158,45 +170,12 @@ const routes = [
                 }
             },
             {
-                path: 'planManage/createPlan',
-                name: 'createPlan',
-                component: createPlan,
-                meta: {
-                    breadcrumb: [
-                        { name: 'planManage', label: '制品分发' },
-                        { name: 'createPlan', label: '创建计划' }
-                    ]
-                }
-            },
-            {
-                path: 'planManage/editPlan/:planId',
-                name: 'editPlan',
-                component: createPlan,
-                meta: {
-                    breadcrumb: [
-                        { name: 'planManage', label: '{planName}', template: '制品分发' },
-                        { name: 'createPlan', label: '编辑计划' }
-                    ]
-                }
-            },
-            {
-                path: 'planManage/planDetail/:planId',
-                name: 'planDetail',
-                component: createPlan,
-                meta: {
-                    breadcrumb: [
-                        { name: 'planManage', label: '{planName}', template: '制品分发' },
-                        { name: 'createPlan', label: '计划详情' }
-                    ]
-                }
-            },
-            {
                 path: 'planManage/logDetail/:logId',
                 name: 'logDetail',
                 component: logDetail,
                 meta: {
                     breadcrumb: [
-                        { name: 'planManage', label: '{planName}', template: '制品分发' },
+                        { name: 'planManage', label: '{planName}', template: 'planManage' },
                         { name: 'logDetail', label: '日志详情' }
                     ]
                 }
@@ -218,7 +197,7 @@ const routes = [
                 meta: {
                     breadcrumb: [
                         { name: 'repoScan', label: '制品分析' },
-                        { name: 'scanReport', label: '{scanName}', template: '扫描详情' }
+                        { name: 'scanReport', label: '{scanName}', template: 'scanReport' }
                     ]
                 }
             },
@@ -231,20 +210,20 @@ const routes = [
                     if (to.query.scanName) {
                         to.meta.breadcrumb = [
                             { name: 'repoScan', label: '制品分析' },
-                            { name: 'scanReport', label: '{scanName}', template: '扫描详情' },
-                            { name: 'artiReport', label: '{artiName}', template: '制品扫描结果' }
+                            { name: 'scanReport', label: '{scanName}', template: 'scanReport' },
+                            { name: 'artiReport', label: '{artiName}', template: 'artiReport' }
                         ]
                     } else if (repoType === 'generic') {
                         to.meta.breadcrumb = [
-                            { name: 'repoList', label: '仓库列表' },
-                            { name: 'repoGeneric', label: '{repoName}', template: '二进制仓库' },
+                            { to: 'repositories', name: 'browser', label: '仓库列表' },
+                            { name: 'repoGeneric', label: '{repoName}', template: 'repoGeneric' },
                             { name: 'artiReport', label: '制品扫描结果' }
                         ]
                     } else if (repoType) {
                         to.meta.breadcrumb = [
-                            { name: 'repoList', label: '仓库列表' },
-                            { name: 'commonList', label: '{repoName}', template: '依赖仓库' },
-                            { name: 'commonPackage', label: '{packageKey}', template: '制品详情' },
+                            { to: 'repositories', name: 'browser', label: '仓库列表' },
+                            { name: 'commonList', label: '{repoName}', template: 'commonList' },
+                            { name: 'commonPackage', label: '{packageKey}', template: 'commonPackage' },
                             { name: 'artiReport', label: '制品扫描结果' }
                         ]
                     }
@@ -258,7 +237,7 @@ const routes = [
                 meta: {
                     breadcrumb: [
                         { name: 'repoScan', label: '制品分析' },
-                        { name: 'scanConfig', label: '{scanName}', template: '方案设置' }
+                        { name: 'scanConfig', label: '{scanName}', template: 'scanConfig' }
                     ]
                 }
             },
@@ -269,7 +248,7 @@ const routes = [
                 meta: {
                     breadcrumb: [
                         { name: 'repoScan', label: '制品分析' },
-                        { name: 'scanReport', label: '{scanName}', template: '扫描详情' },
+                        { name: 'scanReport', label: '{scanName}', template: 'scanReport' },
                         { name: 'startScan', label: '立即扫描' }
                     ]
                 }
@@ -290,8 +269,8 @@ const routes = [
                 component: repoGeneric,
                 meta: {
                     breadcrumb: [
-                        { name: 'repoList', label: '仓库列表' },
-                        { name: 'repoGeneric', label: '{repoName}', template: '二进制仓库' }
+                        { to: 'repositories', name: 'browser', label: '仓库列表' },
+                        { name: 'repoGeneric', label: '{repoName}', template: 'repoGeneric' }
                     ]
                 }
             },
@@ -301,8 +280,8 @@ const routes = [
                 component: commonPackageList,
                 meta: {
                     breadcrumb: [
-                        { name: 'repoList', label: '仓库列表' },
-                        { name: 'commonList', label: '{repoName}', template: '依赖仓库' }
+                        { to: 'repositories', name: 'browser', label: '仓库列表' },
+                        { name: 'commonList', label: '{repoName}', template: 'commonList' }
                     ]
                 }
             },
@@ -312,9 +291,9 @@ const routes = [
                 component: commonPackageDetail,
                 meta: {
                     breadcrumb: [
-                        { name: 'repoList', label: '仓库列表' },
-                        { name: 'commonList', label: '{repoName}', template: '依赖仓库' },
-                        { name: 'commonPackage', label: '{packageKey}', template: '制品详情' }
+                        { to: 'repositories', name: 'browser', label: '仓库列表' },
+                        { name: 'commonList', label: '{repoName}', template: 'commonList' },
+                        { name: 'commonPackage', label: '{packageKey}', template: 'commonPackage' }
                     ]
                 }
             }

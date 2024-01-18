@@ -4,16 +4,20 @@ import com.tencent.bkrepo.auth.model.TUser
 import com.tencent.bkrepo.auth.util.DataDigestUtils
 import org.springframework.data.mongodb.core.query.Criteria
 import org.springframework.data.mongodb.core.query.Query
+import org.springframework.data.mongodb.core.query.Query.query
+import org.springframework.data.mongodb.core.query.and
+
 
 object UserQueryHelper {
 
-    fun buildPermissionCheck(userId: String, pwd: String, hashPwd: String): Query {
+    fun buildUserPasswordCheck(userId: String, pwd: String, hashPwd: String, sm3HashPwd: String): Query {
         val criteria = Criteria()
         criteria.orOperator(
             Criteria.where(TUser::pwd.name).`is`(hashPwd),
-            Criteria.where("tokens.id").`is`(pwd)
+            Criteria.where("tokens.id").`is`(pwd),
+            Criteria.where("tokens.id").`is`(sm3HashPwd)
         ).and(TUser::userId.name).`is`(userId)
-        return Query.query(criteria)
+        return query(criteria)
     }
 
     fun filterNotLockedUser(): Query {
@@ -26,7 +30,7 @@ object UserQueryHelper {
     }
 
     fun getUserByIdAndPwd(userId: String, oldPwd: String): Query {
-        return Query.query(
+        return query(
             Criteria().andOperator(
                 Criteria.where(TUser::userId.name).`is`(userId),
                 Criteria.where(TUser::pwd.name).`is`(DataDigestUtils.md5FromStr(oldPwd))
@@ -59,6 +63,21 @@ object UserQueryHelper {
         }
         admin?.let { criteria.and(TUser::admin.name).`is`(admin) }
         locked?.let { criteria.and(TUser::locked.name).`is`(locked) }
+        return Query(criteria)
+    }
+
+    fun getUserByAsstUsers(userId: String, userName: String?): Query {
+        val criteria = Criteria()
+        userName?.let {
+            criteria.orOperator(
+                Criteria.where(TUser::userId.name).regex("^$userName"),
+                Criteria.where(TUser::name.name).regex("^$userName")
+            )
+        }
+        userId.let {
+            criteria.and(TUser::asstUsers.name).`in`(*arrayOf(userId))
+            criteria.and(TUser::group.name).`is`(true)
+        }
         return Query(criteria)
     }
 }

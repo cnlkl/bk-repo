@@ -38,7 +38,8 @@ import com.tencent.bkrepo.common.security.http.credentials.AnonymousCredentials
 import com.tencent.bkrepo.common.security.util.SecurityUtils
 import org.slf4j.LoggerFactory
 import org.springframework.util.AntPathMatcher
-import org.springframework.web.servlet.handler.HandlerInterceptorAdapter
+import org.springframework.web.servlet.AsyncHandlerInterceptor
+import javax.servlet.DispatcherType
 import javax.servlet.http.HttpServletRequest
 import javax.servlet.http.HttpServletResponse
 
@@ -47,11 +48,17 @@ import javax.servlet.http.HttpServletResponse
  */
 class HttpAuthInterceptor(
     private val httpAuthSecurity: HttpAuthSecurity
-) : HandlerInterceptorAdapter() {
+) : AsyncHandlerInterceptor {
 
     private val pathMatcher = AntPathMatcher()
 
     override fun preHandle(request: HttpServletRequest, response: HttpServletResponse, handler: Any): Boolean {
+        // https://stackoverflow.com/questions/26995395
+        // deferredResult会触发preHandle两次，第一次dispatcherType为REQUEST，第二次为ASYNC, 超时时为ERROR, 只有第一次需要认证
+        // 后续获取的request.parameterMap value未decode
+        if (request.dispatcherType != DispatcherType.REQUEST) {
+            return true
+        }
         val requestUri = request.requestURI
         val requestMethod = request.method
         httpAuthSecurity.authHandlerList.forEach { authHandler ->

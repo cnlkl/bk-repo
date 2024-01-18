@@ -26,7 +26,7 @@
                 <bk-input
                     class="w250"
                     v-model.trim="packageNameVal"
-                    placeholder="请输入制品名称, 按Enter键搜索"
+                    :placeholder="$t('artifactPlaceHolder')"
                     clearable
                     @enter="handlerPaginationChange()"
                     @clear="handlerPaginationChange()"
@@ -38,11 +38,11 @@
                         v-model="property"
                         :clearable="false"
                         @change="handlerPaginationChange()">
-                        <bk-option id="name" name="名称排序"></bk-option>
-                        <bk-option id="lastModifiedDate" name="时间排序"></bk-option>
-                        <bk-option id="downloads" name="下载量排序"></bk-option>
+                        <bk-option id="name" :name="$t('nameSorting')"></bk-option>
+                        <bk-option id="lastModifiedDate" :name="$t('lastModifiedTimeSorting')"></bk-option>
+                        <bk-option id="downloads" :name="$t('downloadSorting')"></bk-option>
                     </bk-select>
-                    <bk-popover :content="`切换为${direction === 'ASC' ? '降序' : '升序'}`" placement="top">
+                    <bk-popover :content="$t('toggle') + `${direction === 'ASC' ? $t('desc') : $t('asc')}`" placement="top">
                         <div class="ml10 sort-order flex-center" @click="changeDirection">
                             <Icon :name="`order-${direction.toLowerCase()}`" size="16"></Icon>
                         </div>
@@ -57,7 +57,7 @@
                         :is-loading="isLoading"
                         :has-next="packageList.length < pagination.count"
                         @load="handlerPaginationChange({ current: pagination.current + 1 }, true)">
-                        <div class="mb10 list-count">共计{{ pagination.count }}个制品</div>
+                        <div class="mb10 list-count">{{ $t('totalVersionCount', [pagination.count])}}</div>
                         <package-card
                             class="mb10"
                             v-for="pkg in packageList"
@@ -88,6 +88,7 @@
                 <repo-guide class="pt20 pb20 pl10 pr10" :article="articleGuide"></repo-guide>
             </template>
         </bk-sideslider>
+        <iam-deny-dialog :visible.sync="showIamDenyDialog" :show-data="showData"></iam-deny-dialog>
     </div>
 </template>
 <script>
@@ -96,10 +97,11 @@
     import repoGuide from '@repository/views/repoCommon/repoGuide'
     import emptyGuide from '@repository/views/repoCommon/emptyGuide'
     import repoGuideMixin from '@repository/views/repoCommon/repoGuideMixin'
+    import iamDenyDialog from '@repository/components/IamDenyDialog/IamDenyDialog'
     import { mapState, mapActions } from 'vuex'
     export default {
         name: 'commonPackageList',
-        components: { InfiniteScroll, packageCard, repoGuide, emptyGuide },
+        components: { InfiniteScroll, packageCard, repoGuide, emptyGuide, iamDenyDialog },
         mixins: [repoGuideMixin],
         data () {
             return {
@@ -114,11 +116,13 @@
                     count: 0,
                     limitList: [10, 20, 40]
                 },
-                showGuide: false
+                showGuide: false,
+                showIamDenyDialog: false,
+                showData: {}
             }
         },
         computed: {
-            ...mapState(['repoListAll', 'permission']),
+            ...mapState(['repoListAll', 'permission', 'userInfo']),
             currentRepo () {
                 return this.repoListAll.find(repo => repo.name === this.repoName) || {}
             }
@@ -131,7 +135,8 @@
             ...mapActions([
                 'getRepoListAll',
                 'searchPackageList',
-                'deletePackage'
+                'deletePackage',
+                'getPermissionUrl'
             ]),
             changeDirection () {
                 this.direction = this.direction === 'ASC' ? 'DESC' : 'ASC'
@@ -168,26 +173,72 @@
                 }).then(({ records, totalRecords }) => {
                     load ? this.packageList.push(...records) : (this.packageList = records)
                     this.pagination.count = totalRecords
+                }).catch(err => {
+                    if (err.status === 403) {
+                        this.getPermissionUrl({
+                            body: {
+                                projectId: this.projectId,
+                                action: 'READ',
+                                resourceType: 'REPO',
+                                uid: this.userInfo.name,
+                                repoName: this.repoName
+                            }
+                        }).then(res => {
+                            if (res !== '') {
+                                this.showIamDenyDialog = true
+                                this.showData = {
+                                    projectId: this.projectId,
+                                    repoName: this.repoName,
+                                    action: 'READ',
+                                    url: res
+                                }
+                            }
+                        })
+                    }
                 }).finally(() => {
                     this.isLoading = false
                 })
             },
-            deletePackageHandler ({ key }) {
+            deletePackageHandler (pkg) {
                 this.$confirm({
                     theme: 'danger',
-                    message: this.$t('deletePackageTitle', { name: key }),
+                    message: this.$t('deletePackageTitle', { name: '' }),
+                    subMessage: pkg.key,
                     confirmFn: () => {
                         return this.deletePackage({
                             projectId: this.projectId,
                             repoType: this.repoType,
                             repoName: this.repoName,
-                            packageKey: key
+                            packageKey: pkg.key
                         }).then(() => {
                             this.handlerPaginationChange()
                             this.$bkMessage({
                                 theme: 'success',
-                                message: this.$t('delete') + this.$t('success')
+                                message: this.$t('delete') + this.$t('space') + this.$t('success')
                             })
+                        }).catch(e => {
+                            if (e.status === 403) {
+                                this.getPermissionUrl({
+                                    body: {
+                                        projectId: this.projectId,
+                                        action: 'DELETE',
+                                        resourceType: 'REPO',
+                                        uid: this.userInfo.name,
+                                        repoName: this.repoName
+                                    }
+                                }).then(res => {
+                                    if (res !== '') {
+                                        this.showIamDenyDialog = true
+                                        this.showData = {
+                                            projectId: this.projectId,
+                                            repoName: this.repoName,
+                                            action: 'DELETE',
+                                            packageName: pkg.name,
+                                            url: res
+                                        }
+                                    }
+                                })
+                            }
                         })
                     }
                 })
@@ -196,8 +247,14 @@
                 this.$router.push({
                     name: 'commonPackage',
                     query: {
+                        // 需要保留之前制品列表页的筛选项和页码相关参数
+                        ...this.$route.query,
                         repoName: this.repoName,
-                        packageKey: pkg.key
+                        packageKey: pkg.key,
+                        // 此时需要将version清除掉，否则在进入仓库详情页后再返回包列表页，然后选择其他的包进入版本详情页，
+                        // 会导致出现无效请求，且packageKey为最新版本的，但是版本号是之前版本的，进而导致请求出错
+                        // 因为在版本详情页存在一个version的watch，只有version有值的时候才会请求版本详情
+                        version: undefined
                     }
                 })
             }
