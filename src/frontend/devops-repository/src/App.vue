@@ -84,6 +84,10 @@
                         if (this.projectList.find(v => v.id === urlProjectId)) {
                             projectId = urlProjectId
                         } else if (this.projectList.find(v => v.id === localProjectId)) {
+                            this.$bkMessage({
+                                message: this.$t('projectNoPermissionTip', { 0: urlProjectId }),
+                                theme: 'primary'
+                            })
                             projectId = localProjectId
                         } else {
                             this.$bkMessage({
