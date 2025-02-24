@@ -39,8 +39,8 @@
             <bk-form-item :label="$t('isAllowShowFolder')">
                 <div style="display: flex;margin-top: 5px">
                     <bk-radio-group ref="isAllowShowFolderRadio" v-model="repoBaseInfo.autoIndex" style="width: 120px">
-                        <bk-radio class="mr20" :value="true">{{ $t('enable') }}</bk-radio>
-                        <bk-radio :value="false">{{ $t('disable') }}</bk-radio>
+                        <bk-radio class="mr20" :value="true">{{ $t('yes') }}</bk-radio>
+                        <bk-radio :value="false">{{ $t('no') }}</bk-radio>
                     </bk-radio-group>
                     <Icon name="repoHelp" size="14" style="margin-top: 4px;" v-bk-tooltips="isAllowShowFolderHelp" />
                 </div>
@@ -114,7 +114,7 @@
             groupXmlSet: [],
             description: '',
             display: true,
-            autoIndex: false,
+            autoIndex: true,
             mobile: {
                 enable: false,
                 filename: '',

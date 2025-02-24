@@ -776,6 +776,8 @@
     "noProjectData":"无项目数据",
     "enable": "开启",
     "disable": "关闭",
+    "yes": "是",
+    "no": "否",
     "newToken": "新增",
     "newAnalysis": "创建",
     "relatedUsers":"关联团队用户",
