@@ -91,6 +91,7 @@ class RouteConfiguration(
         before(RouteConfiguration::initArtifactContext)
         filter(permissionFilterFunction::filter)
         POST("/login/{projectId}/{repoName}", loginHandler::login)
+        POST("/user/login", loginHandler::userLogin)
         POST("/devx/login/{repoName}", loginHandler::devxLogin)
         POST("/ioa/login/{projectId}/{repoName}", loginHandler::ioaLogin)
         POST("/ioa/ticket", loginHandler::ioaTicket)

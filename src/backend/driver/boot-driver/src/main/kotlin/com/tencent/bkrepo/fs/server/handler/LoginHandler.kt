@@ -30,10 +30,12 @@ package com.tencent.bkrepo.fs.server.handler
 import com.tencent.bkrepo.auth.pojo.enums.PermissionAction
 import com.tencent.bkrepo.auth.pojo.user.CreateUserRequest
 import com.tencent.bkrepo.auth.pojo.user.CreateUserToProjectRequest
+import com.tencent.bkrepo.common.api.constant.ANONYMOUS_USER
 import com.tencent.bkrepo.common.api.constant.BASIC_AUTH_PREFIX
 import com.tencent.bkrepo.common.artifact.pojo.RepositoryVisibility
 import com.tencent.bkrepo.common.api.constant.HttpHeaders
 import com.tencent.bkrepo.common.api.constant.StringPool
+import com.tencent.bkrepo.common.api.constant.USER_KEY
 import com.tencent.bkrepo.common.api.util.BasicAuthUtils
 import com.tencent.bkrepo.common.artifact.constant.PROJECT_ID
 import com.tencent.bkrepo.common.artifact.constant.REPO_NAME
@@ -44,6 +46,7 @@ import com.tencent.bkrepo.common.security.interceptor.devx.DevXWorkSpace
 import com.tencent.bkrepo.fs.server.constant.JWT_CLAIMS_PERMIT
 import com.tencent.bkrepo.fs.server.constant.JWT_CLAIMS_REPOSITORY
 import com.tencent.bkrepo.fs.server.context.ReactiveArtifactContextHolder
+import com.tencent.bkrepo.fs.server.getOrNull
 import com.tencent.bkrepo.fs.server.pojo.DevxLoginResponse
 import com.tencent.bkrepo.fs.server.request.DevxLoginRequest
 import com.tencent.bkrepo.fs.server.request.IoaLoginRequest
@@ -89,6 +92,18 @@ class LoginHandler(
             throw AuthenticationException()
         }
         val token = createToken(projectId, repoName, username)
+        return ReactiveResponseBuilder.success(token)
+    }
+
+    /**
+     * 用户态登录，客户端页面登录后用ticket/token换取jwt token
+     */
+    suspend fun userLogin(request: ServerRequest): ServerResponse {
+        val userId = request.attribute(USER_KEY).getOrNull()?.toString()
+        if (userId == null || userId == ANONYMOUS_USER) {
+            throw AuthenticationException()
+        }
+        val token = createToken(userId)
         return ReactiveResponseBuilder.success(token)
     }
 
@@ -180,6 +195,11 @@ class LoginHandler(
             rAuthClient.createUserToProject(request).awaitSingle()
             userId
         }
+    }
+
+    private suspend fun createToken(userId: String): String {
+        createUser(userId)
+        return securityManager.generateToken(subject = userId)
     }
 
     private suspend fun createToken(projectId: String, repoName: String, username: String): String {
